@@ -1,0 +1,929 @@
+-- ==========================================
+-- Services & Local Player
+-- ==========================================
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- Settings Configuration
+-- ==========================================
+local Settings = {
+    -- Auto Block & Hitbox Settings
+    MasterAutoBlock = true, 
+    HitboxEnabled = true,
+    BoxSize = 6,
+    BoxColor = Color3.fromRGB(0, 255, 0),
+    BoxTransparency = 0.5,
+    GlowMode = true,
+    VisibleTime = 0.5,
+    AutoBlockAnim = true,
+    AutoBlockAudio = false,
+    BlockDelay = 0,
+    DetectionRange = 15,
+    BlockAngle = 90,
+    ShowQuickUI = true,
+
+    -- Auto Generator Solver Settings
+    AutoSolver = true,         
+    SolverSpeed = 0.1,         
+
+    -- ESP Settings 
+    ESP_Killer = true,
+    Color_Killer = Color3.fromRGB(255, 0, 0),
+    ESP_Survivors = true,
+    Color_Survivors = Color3.fromRGB(0, 170, 255),
+    ESP_Generators = true,
+    Color_Generators = Color3.fromRGB(255, 255, 0),
+    ESP_BloxyCola = true,
+    Color_BloxyCola = Color3.fromRGB(255, 255, 255),
+    ESP_Medkit = true,
+    Color_Medkit = Color3.fromRGB(0, 255, 0),
+    ESP_DigitalFootprint = true,
+    Color_DigitalFootprint = Color3.fromRGB(170, 0, 255),
+    ESP_PizzaDelivery = true,
+    Color_PizzaDelivery = Color3.fromRGB(255, 170, 0)
+}
+
+-- ==========================================
+-- Helper: ตรวจสอบว่าอยู่ใน Lobby หรือไม่
+-- ==========================================
+local function isInLobby(obj)
+    if not obj then return false end
+    local current = obj
+    while current and current ~= Workspace do
+        local name = string.lower(current.Name)
+        if string.find(name, "lobby") or string.find(name, "waiting") or string.find(name, "menu") or string.find(name, "room") then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+-- ==========================================
+-- Helper: ตรวจสอบว่านี่คือตัวเราเองหรือไม่ (ขั้นเด็ดขาด)
+-- ==========================================
+local function isLocalPlayerObj(obj)
+    if not obj then return false end
+    
+    -- เช็คจาก Character ปกติ
+    if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then return true end
+    
+    -- เช็คจากชื่อ (บางเกมใช้โมเดลชื่อเดียวกับผู้เล่น)
+    if obj.Name == LocalPlayer.Name then return true end
+    
+    -- เช็คผ่านระบบ Players
+    local plr = Players:GetPlayerFromCharacter(obj)
+    if plr == LocalPlayer then return true end
+    
+    -- เช็คจากกล้อง (การันตี 100% สำหรับ Custom Rigs ว่ากล้องตามใครอยู่)
+    local cam = Workspace.CurrentCamera
+    if cam and cam.CameraSubject then
+        if cam.CameraSubject:IsDescendantOf(obj) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- ==========================================
+-- Data Dictionaries
+-- ==========================================
+local TriggerSounds = {
+    ["102228729296384"]=true, ["140242176732868"]=true, ["112809109188560"]=true, 
+    ["136323728355613"]=true, ["115026634746636"]=true, ["84116622032112"]=true,
+    ["108907358619313"]=true, ["127793641088496"]=true, ["86174610237192"]=true,
+    ["95079963655241"]=true, ["101199185291628"]=true, ["119942598489800"]=true,
+    ["84307400688050"]=true, ["113037804008732"]=true, ["105200830849301"]=true,
+    ["75330693422988"]=true, ["82221759983649"]=true, ["81702359653578"]=true,
+    ["108610718831698"]=true, ["112395455254818"]=true, ["109431876587852"]=true,
+    ["109348678063422"]=true, ["85853080745515"]=true, ["12222216"]=true,
+    ["105840448036441"]=true, ["114742322778642"]=true, ["119583605486352"]=true,
+    ["79980897195554"]=true, ["71805956520207"]=true, ["79391273191671"]=true,
+    ["89004992452376"]=true, ["101553872555606"]=true, ["101698569375359"]=true,
+    ["106300477136129"]=true, ["116581754553533"]=true, ["117231507259853"]=true,
+    ["119089145505438"]=true, ["121954639447247"]=true, ["125213046326879"]=true,
+    ["131406927389838"]=true
+}
+
+local KillerWindups = {
+    ["126830014841198"] = 0.2, ["130958529065375"] = 0.2, ["94958041603347"] = 0.2,
+    ["118298475669935"] = 0.2, ["109667959938617"] = 0.2, ["108196996477620"] = 0.2, ["125403313786645"] = 0.2,
+    ["18885909645"] = 0.1, ["84069821282466"] = 0.1, ["114126519127454"] = 0.1,
+    ["121858217776572"] = 0.1, ["99824350842479"] = 0.1, ["70371667919898"] = 0.1, ["70785407091644"] = 0.1,
+    ["105458270463374"] = 0.4, ["87347358451124"] = 0.4, ["121778755277919"] = 0.4,
+    ["88970503168421"] = 0.4, ["138938529389204"] = 0.4, ["123780556554672"] = 0.4, ["81299297965542"] = 0.4,
+    ["106538427162796"] = 0.35, ["92567970681901"] = 0.35, ["91509234639766"] = 0.35, ["77375846492436"] = 0.35,
+    ["83829782357897"] = 0.4, ["90620531468240"] = 0.4, ["126171487400618"] = 0.4,
+    ["114506382930939"] = 0.4, ["124705663396411"] = 0.4, ["99829427721752"] = 0.4, ["121293883585738"] = 0.4,
+    ["122709416391891"] = 0.3, ["88451353906104"] = 0.3, ["124269076578545"] = 0.3,
+    ["123172382755876"] = 0.22
+}
+
+-- ==========================================
+-- Quick Toggle Floating UI
+-- ==========================================
+if CoreGui:FindFirstChild("DuckQuickToggle") then CoreGui.DuckQuickToggle:Destroy() end
+if LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("DuckQuickToggle") then LocalPlayer.PlayerGui.DuckQuickToggle:Destroy() end
+
+local QuickGui = Instance.new("ScreenGui")
+QuickGui.Name = "DuckQuickToggle"
+QuickGui.ResetOnSpawn = false
+local success = pcall(function() QuickGui.Parent = CoreGui end)
+if not success then QuickGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 130, 0, 40)
+ToggleBtn.Position = UDim2.new(0.5, -65, 0.1, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 14
+ToggleBtn.Text = "Auto Block: ON"
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Parent = QuickGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleBtn
+
+local dragging, dragInput, dragStart, startPos
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = ToggleBtn.Position
+    end
+end)
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+ToggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Settings.MasterAutoBlock = not Settings.MasterAutoBlock
+    ToggleBtn.Text = Settings.MasterAutoBlock and "Auto Block: ON" or "Auto Block: OFF"
+    ToggleBtn.TextColor3 = Settings.MasterAutoBlock and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 50, 50)
+end)
+QuickGui.Enabled = Settings.ShowQuickUI
+
+-- ==========================================
+-- ESP Core Engine 
+-- ==========================================
+local trackedESP = {}
+
+local ESPCategories = {
+    Killer = { ConfigKey = "ESP_Killer", ColorKey = "Color_Killer", Label = "Killer" },
+    Survivors = { ConfigKey = "ESP_Survivors", ColorKey = "Color_Survivors", Label = "Survivor" },
+    Generators = { ConfigKey = "ESP_Generators", ColorKey = "Color_Generators", Label = "Generator" },
+    BloxyCola = { ConfigKey = "ESP_BloxyCola", ColorKey = "Color_BloxyCola", Label = "Bloxy Cola" },
+    Medkit = { ConfigKey = "ESP_Medkit", ColorKey = "Color_Medkit", Label = "Medkit" },
+    DigitalFootprint = { ConfigKey = "ESP_DigitalFootprint", ColorKey = "Color_DigitalFootprint", Label = "Digital Footprint" },
+    PizzaDelivery = { ConfigKey = "ESP_PizzaDelivery", ColorKey = "Color_PizzaDelivery", Label = "Pizza Delivery" }
+}
+
+local function classifyESPObject(obj)
+    if not obj or not obj.Parent then return nil end
+    if isInLobby(obj) then return nil end 
+    if not (obj:IsA("Model") or obj:IsA("Tool") or obj:IsA("BasePart")) then return nil end
+    
+    -- ป้องกันไม่ให้ ESP ตัวเราเอง
+    if isLocalPlayerObj(obj) then return nil end
+
+    local name = string.lower(obj.Name)
+    local parentName = string.lower(obj.Parent.Name)
+
+    if obj:FindFirstChild("Humanoid") then
+        if string.find(name, "killer") or string.find(parentName, "killer") then return "Killer" end
+        if string.find(name, "survivor") or string.find(parentName, "survivor") then return "Survivors" end
+        if Players:GetPlayerFromCharacter(obj) then return "Survivors" end
+    else
+        if string.find(name, "generator") or string.find(parentName, "generator") or string.find(name, "gen") then return "Generators" end
+        if string.find(name, "bloxycola") or string.find(name, "cola") or string.find(parentName, "bloxycola") then return "BloxyCola" end
+        if string.find(name, "medkit") or string.find(parentName, "medkit") then return "Medkit" end
+        if string.find(name, "digital footprint") or string.find(name, "footprint") or string.find(parentName, "footprint") then return "DigitalFootprint" end
+        if string.find(name, "pizza delivery") or string.find(name, "pizza") or string.find(parentName, "pizza") then return "PizzaDelivery" end
+    end
+    return nil
+end
+
+local function getGeneratorProgress(genObj)
+    if not genObj then return "0%" end
+    
+    local currentVal = 0
+
+    for _, attrName in ipairs({"Progress", "Percent", "State", "Completed", "Repair"}) do
+        local attr = genObj:GetAttribute(attrName)
+        if type(attr) == "number" then
+            currentVal = attr
+            break
+        end
+    end
+
+    if currentVal == 0 then
+        local valObj = genObj:FindFirstChild("Progress", true) or genObj:FindFirstChild("Value", true) or genObj:FindFirstChild("Percent", true)
+        if valObj and (valObj:IsA("NumberValue") or valObj:IsA("IntValue")) then
+            currentVal = valObj.Value
+        end
+    end
+
+    if currentVal >= 100 or currentVal == 4 then
+        return "100%"
+    elseif currentVal >= 75 or currentVal == 3 then
+        return "75%"
+    elseif currentVal >= 50 or currentVal == 2 then
+        return "50%"
+    elseif currentVal >= 25 or currentVal == 1 then
+        return "25%"
+    else
+        return "0%"
+    end
+end
+
+local function updateSingleESP(obj, catKey)
+    if not obj or not obj.Parent or isInLobby(obj) then return end
+    local info = ESPCategories[catKey]
+    if not info then return end
+
+    local isEnabled = Settings[info.ConfigKey]
+    local color = Settings[info.ColorKey]
+
+    local highlight = obj:FindFirstChild("DuckHighlight")
+    local billboard = obj:FindFirstChild("DuckBillboard")
+
+    if isEnabled then
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "DuckHighlight"
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.Parent = obj
+        end
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.Enabled = true
+
+        if catKey == "Generators" then
+            if not billboard then
+                billboard = Instance.new("BillboardGui")
+                billboard.Name = "DuckBillboard"
+                billboard.AlwaysOnTop = true
+                billboard.Size = UDim2.new(0, 150, 0, 30)
+                billboard.StudsOffset = Vector3.new(0, 3, 0)
+                
+                local textLabel = Instanceปัญหาที่ทำให้ตัวสคริปต์ยังคงแสดงผล ESP (มองทะลุ) ที่ตัวละครของคุณเอง (ตามภาพที่คุณแนบมา) เกิดจากการที่ตัวเกมโหลด `LocalPlayer.Character` ไม่ทันในจังหวะที่สคริปต์เริ่มทำงาน ทำให้เงื่อนไขการบล็อคตัวเองหลุดไป
+
+ผมได้ทำการแก้ไขโค้ดให้แล้ว โดยเพิ่ม **การดักจับตัวละครของตัวเองแบบเข้มงวด (Strict Self-Check)** ทั้งในส่วนของการตรวจจับครั้งแรก (`classifyESPObject`) และในลูปการรีเฟรช (`refreshAllESP`) เพื่อลบ ESP ออกจากตัวคุณเองทันทีหากเกิดข้อผิดพลาดในการโหลด
+
+คุณสามารถนำโค้ดด้านล่างนี้ไปใช้งานทับโค้ดเดิมได้เลยครับ:
+
+```lua
+-- ==========================================
+-- Services & Local Player
+-- ==========================================
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- Settings Configuration
+-- ==========================================
+local Settings = {
+    -- Auto Block & Hitbox Settings
+    MasterAutoBlock = true, 
+    HitboxEnabled = true,
+    BoxSize = 6,
+    BoxColor = Color3.fromRGB(0, 255, 0),
+    BoxTransparency = 0.5,
+    GlowMode = true,
+    VisibleTime = 0.5,
+    AutoBlockAnim = true,
+    AutoBlockAudio = false,
+    BlockDelay = 0,
+    DetectionRange = 15,
+    BlockAngle = 90,
+    ShowQuickUI = true,
+
+    -- Auto Generator Solver Settings
+    AutoSolver = true,         
+    SolverSpeed = 0.1,         
+
+    -- ESP Settings 
+    ESP_Killer = true,
+    Color_Killer = Color3.fromRGB(255, 0, 0),
+    ESP_Survivors = true,
+    Color_Survivors = Color3.fromRGB(0, 170, 255),
+    ESP_Generators = true,
+    Color_Generators = Color3.fromRGB(255, 255, 0),
+    ESP_BloxyCola = true,
+    Color_BloxyCola = Color3.fromRGB(255, 255, 255),
+    ESP_Medkit = true,
+    Color_Medkit = Color3.fromRGB(0, 255, 0),
+    ESP_DigitalFootprint = true,
+    Color_DigitalFootprint = Color3.fromRGB(170, 0, 255),
+    ESP_PizzaDelivery = true,
+    Color_PizzaDelivery = Color3.fromRGB(255, 170, 0)
+}
+
+-- ==========================================
+-- Helper: ตรวจสอบว่าอยู่ใน Lobby หรือไม่
+-- ==========================================
+local function isInLobby(obj)
+    if not obj then return false end
+    local current = obj
+    while current and current ~= Workspace do
+        local name = string.lower(current.Name)
+        if string.find(name, "lobby") or string.find(name, "waiting") or string.find(name, "menu") or string.find(name, "room") then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+-- ==========================================
+-- Data Dictionaries
+-- ==========================================
+local TriggerSounds = {
+    ["102228729296384"]=true, ["140242176732868"]=true, ["112809109188560"]=true, 
+    ["136323728355613"]=true, ["115026634746636"]=true, ["84116622032112"]=true,
+    ["108907358619313"]=true, ["127793641088496"]=true, ["86174610237192"]=true,
+    ["95079963655241"]=true, ["101199185291628"]=true, ["119942598489800"]=true,
+    ["84307400688050"]=true, ["113037804008732"]=true, ["105200830849301"]=true,
+    ["75330693422988"]=true, ["82221759983649"]=true, ["81702359653578"]=true,
+    ["108610718831698"]=true, ["112395455254818"]=true, ["109431876587852"]=true,
+    ["109348678063422"]=true, ["85853080745515"]=true, ["12222216"]=true,
+    ["105840448036441"]=true, ["114742322778642"]=true, ["119583605486352"]=true,
+    ["79980897195554"]=true, ["71805956520207"]=true, ["79391273191671"]=true,
+    ["89004992452376"]=true, ["101553872555606"]=true, ["101698569375359"]=true,
+    ["106300477136129"]=true, ["116581754553533"]=true, ["117231507259853"]=true,
+    ["119089145505438"]=true, ["121954639447247"]=true, ["125213046326879"]=true,
+    ["131406927389838"]=true
+}
+
+local KillerWindups = {
+    ["126830014841198"] = 0.2, ["130958529065375"] = 0.2, ["94958041603347"] = 0.2,
+    ["118298475669935"] = 0.2, ["109667959938617"] = 0.2, ["108196996477620"] = 0.2, ["125403313786645"] = 0.2,
+    ["18885909645"] = 0.1, ["84069821282466"] = 0.1, ["114126519127454"] = 0.1,
+    ["121858217776572"] = 0.1, ["99824350842479"] = 0.1, ["70371667919898"] = 0.1, ["70785407091644"] = 0.1,
+    ["105458270463374"] = 0.4, ["87347358451124"] = 0.4, ["121778755277919"] = 0.4,
+    ["88970503168421"] = 0.4, ["138938529389204"] = 0.4, ["123780556554672"] = 0.4, ["81299297965542"] = 0.4,
+    ["106538427162796"] = 0.35, ["92567970681901"] = 0.35, ["91509234639766"] = 0.35, ["77375846492436"] = 0.35,
+    ["83829782357897"] = 0.4, ["90620531468240"] = 0.4, ["126171487400618"] = 0.4,
+    ["114506382930939"] = 0.4, ["124705663396411"] = 0.4, ["99829427721752"] = 0.4, ["121293883585738"] = 0.4,
+    ["122709416391891"] = 0.3, ["88451353906104"] = 0.3, ["124269076578545"] = 0.3,
+    ["123172382755876"] = 0.22
+}
+
+-- ==========================================
+-- Quick Toggle Floating UI
+-- ==========================================
+if CoreGui:FindFirstChild("DuckQuickToggle") then CoreGui.DuckQuickToggle:Destroy() end
+if LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("DuckQuickToggle") then LocalPlayer.PlayerGui.DuckQuickToggle:Destroy() end
+
+local QuickGui = Instance.new("ScreenGui")
+QuickGui.Name = "DuckQuickToggle"
+QuickGui.ResetOnSpawn = false
+local success = pcall(function() QuickGui.Parent = CoreGui end)
+if not success then QuickGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 130, 0, 40)
+ToggleBtn.Position = UDim2.new(0.5, -65, 0.1, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 14
+ToggleBtn.Text = "Auto Block: ON"
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Parent = QuickGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleBtn
+
+local dragging, dragInput, dragStart, startPos
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = ToggleBtn.Position
+    end
+end)
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+ToggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Settings.MasterAutoBlock = not Settings.MasterAutoBlock
+    ToggleBtn.Text = Settings.MasterAutoBlock and "Auto Block: ON" or "Auto Block: OFF"
+    ToggleBtn.TextColor3 = Settings.MasterAutoBlock and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 50, 50)
+end)
+QuickGui.Enabled = Settings.ShowQuickUI
+
+-- ==========================================
+-- ESP Core Engine 
+-- ==========================================
+local trackedESP = {}
+
+local ESPCategories = {
+    Killer = { ConfigKey = "ESP_Killer", ColorKey = "Color_Killer", Label = "Killer" },
+    Survivors = { ConfigKey = "ESP_Survivors", ColorKey = "Color_Survivors", Label = "Survivor" },
+    Generators = { ConfigKey = "ESP_Generators", ColorKey = "Color_Generators", Label = "Generator" },
+    BloxyCola = { ConfigKey = "ESP_BloxyCola", ColorKey = "Color_BloxyCola", Label = "Bloxy Cola" },
+    Medkit = { ConfigKey = "ESP_Medkit", ColorKey = "Color_Medkit", Label = "Medkit" },
+    DigitalFootprint = { ConfigKey = "ESP_DigitalFootprint", ColorKey = "Color_DigitalFootprint", Label = "Digital Footprint" },
+    PizzaDelivery = { ConfigKey = "ESP_PizzaDelivery", ColorKey = "Color_PizzaDelivery", Label = "Pizza Delivery" }
+}
+
+local function classifyESPObject(obj)
+    if not obj or not obj.Parent then return nil end
+    if isInLobby(obj) then return nil end 
+    if not (obj:IsA("Model") or obj:IsA("Tool") or obj:IsA("BasePart")) then return nil end
+    
+    -- [FIX] ตรวจจับตัวเองแบบเข้มงวด ป้องกันการมองเห็นทะลุตัวเอง
+    if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then return nil end
+    if obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then return nil end
+
+    local name = string.lower(obj.Name)
+    local parentName = string.lower(obj.Parent.Name)
+
+    if obj:FindFirstChild("Humanoid") then
+        if string.find(name, "killer") or string.find(parentName, "killer") then return "Killer" end
+        if string.find(name, "survivor") or string.find(parentName, "survivor") then return "Survivors" end
+        
+        local p = Players:GetPlayerFromCharacter(obj)
+        if p and p ~= LocalPlayer then return "Survivors" end
+    else
+        if string.find(name, "generator") or string.find(parentName, "generator") or string.find(name, "gen") then return "Generators" end
+        if string.find(name, "bloxycola") or string.find(name, "cola") or string.find(parentName, "bloxycola") then return "BloxyCola" end
+        if string.find(name, "medkit") or string.find(parentName, "medkit") then return "Medkit" end
+        if string.find(name, "digital footprint") or string.find(name, "footprint") or string.find(parentName, "footprint") then return "DigitalFootprint" end
+        if string.find(name, "pizza delivery") or string.find(name, "pizza") or string.find(parentName, "pizza") then return "PizzaDelivery" end
+    end
+    return nil
+end
+
+local function getGeneratorProgress(genObj)
+    if not genObj then return "0%" end
+    
+    local currentVal = 0
+
+    -- ตรวจหา Value/Attribute ในตัวเครื่องปั่นไฟ
+    for _, attrName in ipairs({"Progress", "Percent", "State", "Completed", "Repair"}) do
+        local attr = genObj:GetAttribute(attrName)
+        if type(attr) == "number" then
+            currentVal = attr
+            break
+        end
+    end
+
+    if currentVal == 0 then
+        local valObj = genObj:FindFirstChild("Progress", true) or genObj:FindFirstChild("Value", true) or genObj:FindFirstChild("Percent", true)
+        if valObj and (valObj:IsA("NumberValue") or valObj:IsA("IntValue")) then
+            currentVal = valObj.Value
+        end
+    end
+
+    -- คำนวณตามสเต็ป 4 ครั้ง (ครั้งละ 25%)
+    if currentVal >= 100 or currentVal == 4 then
+        return "100%"
+    elseif currentVal >= 75 or currentVal == 3 then
+        return "75%"
+    elseif currentVal >= 50 or currentVal == 2 then
+        return "50%"
+    elseif currentVal >= 25 or currentVal == 1 then
+        return "25%"
+    else
+        return "0%"
+    end
+end
+
+local function updateSingleESP(obj, catKey)
+    if not obj or not obj.Parent or isInLobby(obj) then return end
+    local info = ESPCategories[catKey]
+    if not info then return end
+
+    local isEnabled = Settings[info.ConfigKey]
+    local color = Settings[info.ColorKey]
+
+    local highlight = obj:FindFirstChild("DuckHighlight")
+    local billboard = obj:FindFirstChild("DuckBillboard")
+
+    if isEnabled then
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "DuckHighlight"
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.Parent = obj
+        end
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.Enabled = true
+
+        -- ระบบป้ายบอกสถานะปั่นไฟ 25%--50%--75%--100%
+        if catKey == "Generators" then
+            if not billboard then
+                billboard = Instance.new("BillboardGui")
+                billboard.Name = "DuckBillboard"
+                billboard.AlwaysOnTop = true
+                billboard.Size = UDim2.new(0, 150, 0, 30)
+                billboard.StudsOffset = Vector3.new(0, 3, 0)
+                
+                local textLabel = Instance.new("TextLabel")
+                textLabel.Name = "Label"
+                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                textLabel.BackgroundTransparency = 1
+                textLabel.Font = Enum.Font.GothamBold
+                textLabel.TextSize = 13
+                textLabel.TextStrokeTransparency = 0
+                textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+                textLabel.Parent = billboard
+                billboard.Parent = obj
+            end
+
+            local percentStr = getGeneratorProgress(obj)
+            local textLabel = billboard:FindFirstChild("Label")
+            if textLabel then
+                textLabel.Text = string.format("Generator [%s]", percentStr)
+                textLabel.TextColor3 = color
+            end
+            billboard.Enabled = true
+        elseif billboard then
+            billboard.Enabled = false
+        end
+    else
+        if highlight then highlight.Enabled = false end
+        if billboard then billboard.Enabled = false end
+    end
+end
+
+local function refreshAllESP()
+    for obj, catKey in pairs(trackedESP) do
+        -- [FIX] ดักเช็คตัวเองซ้ำอีกรอบตอนรีเฟรช ป้องกันสคริปต์ติดบัคตอนเกิดใหม่
+        local isSelf = false
+        if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then isSelf = true end
+        if obj and obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then isSelf = true end
+
+        if obj and obj.Parent and not isInLobby(obj) and not isSelf then
+            updateSingleESP(obj, catKey)
+        else
+            -- หากเผลอไปสร้าง ESP ให้ตัวเอง ให้ลบออกทันที
+            if obj and obj:FindFirstChild("DuckHighlight") then obj.DuckHighlight:Destroy() end
+            if obj and obj:FindFirstChild("DuckBillboard") then obj.DuckBillboard:Destroy() end
+            trackedESP[obj] = nil
+        end
+    end
+end
+
+local function registerESPObject(obj)
+    if isInLobby(obj) then return end
+    local catKey = classifyESPObject(obj)
+    if catKey then
+        local currentParent = obj.Parent
+        local isNested = false
+        while currentParent and currentParent ~= Workspace do
+            if trackedESP[currentParent] then
+                isNested = true
+                break
+            end
+            currentParent = currentParent.Parent
+        end
+        
+        if not isNested then
+            trackedESP[obj] = catKey
+            updateSingleESP(obj, catKey)
+        end
+    end
+end
+
+-- ==========================================
+-- UI Setup (Rayfield Library)
+-- ==========================================
+local Rayfield = loadstring(game:HttpGet('[https://sirius.menu/rayfield](https://sirius.menu/rayfield)'))()
+local Window = Rayfield:CreateWindow({
+   Name = "Duck Hub 🇹🇭",
+   LoadingTitle = "กำลังโหลดสคริปต์...",
+   LoadingSubtitle = "Auto block และอื่นๆ",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false,
+})
+
+local HitboxTab = Window:CreateTab("Hitbox Predict", 4483362458)
+local AutoBlockTab = Window:CreateTab("Auto Block", 4483362458)
+local GenTab = Window:CreateTab("Auto Generator", 4483362458)
+local ESPTab = Window:CreateTab("Visuals (ESP)", 4483362458)
+
+HitboxTab:CreateToggle({ Name = "แสดง hitbox เมื่อ killer m1", CurrentValue = Settings.HitboxEnabled, Callback = function(v) Settings.HitboxEnabled = v end })
+HitboxTab:CreateSlider({ Name = "ขนาด hitbox", Range = {3, 15}, Increment = 0.5, CurrentValue = Settings.BoxSize, Callback = function(v) Settings.BoxSize = v end })
+HitboxTab:CreateSlider({ Name = "ความใส", Range = {0, 1}, Increment = 0.1, CurrentValue = Settings.BoxTransparency, Callback = function(v) Settings.BoxTransparency = v end })
+HitboxTab:CreateColorPicker({ Name = "สี hitbox", Color = Settings.BoxColor, Callback = function(v) Settings.BoxColor = v end })
+
+AutoBlockTab:CreateToggle({ Name = "เปิดปิด auto block ด่วน", CurrentValue = Settings.ShowQuickUI, Callback = function(v) QuickGui.Enabled = v end })
+AutoBlockTab:CreateToggle({ Name = "Auto Block (อนิเมชั่น m1)", CurrentValue = Settings.AutoBlockAnim, Callback = function(v) Settings.AutoBlockAnim = v end })
+AutoBlockTab:CreateToggle({ Name = "Auto Block (เสียง m1)", CurrentValue = Settings.AutoBlockAudio, Callback = function(v) Settings.AutoBlockAudio = v end })
+AutoBlockTab:CreateSlider({ Name = "Block Delay (Seconds)", Range = {0, 1}, Increment = 0.01, CurrentValue = Settings.BlockDelay, Callback = function(v) Settings.BlockDelay = v end })
+AutoBlockTab:CreateSection("Auto Block Detection Settings")
+AutoBlockTab:CreateSlider({ Name = "Block Distance (Range)", Range = {5, 40}, Increment = 1, CurrentValue = Settings.DetectionRange, Callback = function(v) Settings.DetectionRange = v end })
+AutoBlockTab:CreateSlider({ Name = "Block Angle (Width)", Range = {30, 180}, Increment = 5, CurrentValue = Settings.BlockAngle, Callback = function(v) Settings.BlockAngle = v end })
+
+GenTab:CreateToggle({ Name = "Enable Auto Solve (Wires)", CurrentValue = Settings.AutoSolver, Callback = function(v) Settings.AutoSolver = v end })
+GenTab:CreateSlider({ Name = "Solver Speed (Seconds)", Range = {0.05, 0.5}, Increment = 0.05, CurrentValue = Settings.SolverSpeed, Callback = function(v) Settings.SolverSpeed = v end })
+GenTab:CreateParagraph({Title = "💡 วิธีการทำงาน", Content = "เมื่อมินิเกมปั่นไฟเด้งขึ้นมาบนหน้าจอ สคริปต์จะตรวจจับและเชื่อมต่อจุดที่มีตัวเลข/สีเดียวกันให้อัตโนมัติทันที"})
+
+ESPTab:CreateSection("มองทะลุ ผู้รอดชีวิต & ฆาตกร")
+ESPTab:CreateToggle({ Name = "Killer ESP", CurrentValue = Settings.ESP_Killer, Callback = function(v) Settings.ESP_Killer = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Killer Color", Color = Settings.Color_Killer, Callback = function(v) Settings.Color_Killer = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "Survivors ESP", CurrentValue = Settings.ESP_Survivors, Callback = function(v) Settings.ESP_Survivors = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Survivors Color", Color = Settings.Color_Survivors, Callback = function(v) Settings.Color_Survivors = v; refreshAllESP() end })
+
+ESPTab:CreateSection("มองทะลุเครื่องปั่นไฟ & ของ")
+ESPTab:CreateToggle({ Name = "มองเครื่องปั่นไฟ (แสดง %)", CurrentValue = Settings.ESP_Generators, Callback = function(v) Settings.ESP_Generators = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Generators Color", Color = Settings.Color_Generators, Callback = function(v) Settings.Color_Generators = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "BloxyCola ESP", CurrentValue = Settings.ESP_BloxyCola, Callback = function(v) Settings.ESP_BloxyCola = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "BloxyCola Color", Color = Settings.Color_BloxyCola, Callback = function(v) Settings.Color_BloxyCola = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "Medkit ESP", CurrentValue = Settings.ESP_Medkit, Callback = function(v) Settings.ESP_Medkit = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Medkit Color", Color = Settings.Color_Medkit, Callback = function(v) Settings.Color_Medkit = v; refreshAllESP() end })
+
+ESPTab:CreateSection("มองทะลุสกิล & ไอเทมเพิ่มเติม")
+ESPTab:CreateToggle({ Name = "DIGITAL FOOTPRINT ESP", CurrentValue = Settings.ESP_DigitalFootprint, Callback = function(v) Settings.ESP_DigitalFootprint = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "DIGITAL FOOTPRINT Color", Color = Settings.Color_DigitalFootprint, Callback = function(v) Settings.Color_DigitalFootprint = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "PIZZA DELIVERY ESP", CurrentValue = Settings.ESP_PizzaDelivery, Callback = function(v) Settings.ESP_PizzaDelivery = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "PIZZA DELIVERY Color", Color = Settings.Color_PizzaDelivery, Callback = function(v) Settings.Color_PizzaDelivery = v; refreshAllESP() end })
+
+-- ==========================================
+-- Combat Logic Functions (🔥 OPTIMIZED FOR INSTANT RESPONSE)
+-- ==========================================
+local activeCooldowns = {}
+local hookedAnimators = {}
+local blockCooldown = false
+
+local function performBlock(customDelay)
+    if blockCooldown or not Settings.MasterAutoBlock then return end
+    blockCooldown = true
+    
+    local finalDelay = customDelay or Settings.BlockDelay
+
+    local function clickBlock()
+        pcall(function()
+            -- 1. กดปุ่ม UI ผ่าน Event
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+            local blockButton = pGui and pGui:FindFirstChild("MainUI") and pGui.MainUI:FindFirstChild("AbilityContainer") and pGui.MainUI.AbilityContainer:FindFirstChild("Block")
+            
+            if blockButton then
+                if firesignal then
+                    firesignal(blockButton.Activated)
+                    firesignal(blockButton.TouchTap)
+                    firesignal(blockButton.MouseButton1Down)
+                    firesignal(blockButton.MouseButton1Click)
+                end
+                if getconnections then
+                    for _, conn in ipairs(getconnections(blockButton.Activated)) do conn:Fire() end
+                    for _, conn in ipairs(getconnections(blockButton.TouchTap)) do conn:Fire() end
+                    for _, conn in ipairs(getconnections(blockButton.MouseButton1Click)) do conn:Fire() end
+                end
+            end
+
+            -- 2. กดผ่าน VirtualInput (E Key) เป็นแผนสำรอง
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.02)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+    end
+
+    if finalDelay <= 0 then 
+        clickBlock()
+    else 
+        task.delay(finalDelay, clickBlock) 
+    end
+    
+    task.delay(0.1, function() blockCooldown = false end)
+end
+
+local function checkAmIInDangerZone(attacker)
+    if not attacker or isInLobby(attacker) or isInLobby(LocalPlayer.Character) then return false end
+    if attacker == LocalPlayer.Character then return false end
+    
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local enemyHRP = attacker:FindFirstChild("HumanoidRootPart") or attacker.PrimaryPart
+    
+    if myHRP and enemyHRP then
+        local myPos2D = Vector3.new(myHRP.Position.X, 0, myHRP.Position.Z)
+        local enemyPos2D = Vector3.new(enemyHRP.Position.X, 0, enemyHRP.Position.Z)
+        local distance = (myPos2D - enemyPos2D).Magnitude
+        
+        if distance <= Settings.DetectionRange then
+            local enemyLookVector = enemyHRP.CFrame.LookVector
+            local enemyLook2D = Vector3.new(enemyLookVector.X, 0, enemyLookVector.Z).Unit
+            local directionToMe = (myPos2D - enemyPos2D).Unit
+            
+            local dotProduct = math.clamp(enemyLook2D:Dot(directionToMe), -1, 1)
+            local angle = math.deg(math.acos(dotProduct))
+            
+            if angle <= (Settings.BlockAngle / 2) then return true end
+        end
+    end
+    return false
+end
+
+local function drawHitbox(character)
+    if not Settings.HitboxEnabled or isInLobby(character) then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart or character:FindFirstChild("Torso")
+    if not hrp then return end
+
+    local box = Instance.new("Part")
+    box.Name = "M1_Predict_Box"
+    box.Size = Vector3.new(Settings.BoxSize, Settings.BoxSize + 1, Settings.BoxSize) 
+    box.Color = Settings.BoxColor
+    box.Transparency = Settings.BoxTransparency
+    box.Material = Settings.GlowMode and Enum.Material.Neon or Enum.Material.SmoothPlastic
+    box.CanCollide = false
+    box.CanQuery = false
+    box.Massless = true
+    box.Anchored = false 
+
+    local forwardOffset = - (Settings.BoxSize / 2) - 1.5
+    box.CFrame = hrp.CFrame * CFrame.new(0, 0, forwardOffset)
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = hrp
+    weld.Part1 = box
+    weld.Parent = box
+
+    box.Parent = Workspace
+    Debris:AddItem(box, Settings.VisibleTime)
+end
+
+-- ==========================================
+-- Animation Listener (ดักจับง้าง M1 ทันทีแบบ Instant)
+-- ==========================================
+local function setupAnimator(animator)
+    if hookedAnimators[animator] then return end
+    hookedAnimators[animator] = true
+
+    local character = animator:FindFirstAncestorOfClass("Model")
+    if not character or isInLobby(character) then return end
+
+    animator.AnimationPlayed:Connect(function(track)
+        if isInLobby(character) then return end
+        
+        local animId = track.Animation and track.Animation.AnimationId
+        if not animId then return end
+        
+        local numId = string.match(animId, "%d+")
+        if numId and KillerWindups[numId] then
+            local rawWindup = KillerWindups[numId]
+            
+            -- ปรับลดการหน่วง (Ping Offset) เพื่อให้ตอบสนองเป๊ะที่สุด
+            local calculatedDelay = math.max(0, rawWindup - 0.08)
+
+            -- 1. วาด Hitbox ทันทีที่ง้าง
+            if not activeCooldowns[character] then
+                activeCooldowns[character] = true
+                task.spawn(function() drawHitbox(character) end)
+                task.delay(Settings.VisibleTime, function() activeCooldowns[character] = false end)
+            end
+
+            -- 2. สั่ง Auto Block ทันที
+            if Settings.AutoBlockAnim and Settings.MasterAutoBlock then
+                if checkAmIInDangerZone(character) then 
+                    performBlock(calculatedDelay) 
+                end
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- Initialization & Event Listeners
+-- ==========================================
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if obj:IsA("Animator") then setupAnimator(obj) end
+    registerESPObject(obj)
+end
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if isInLobby(obj) then return end
+    if obj:IsA("Animator") then setupAnimator(obj) end
+    registerESPObject(obj)
+
+    if obj:IsA("Sound") and Settings.AutoBlockAudio and Settings.MasterAutoBlock then
+        local soundNumId = string.match(obj.SoundId, "%d+")
+        if soundNumId and TriggerSounds[soundNumId] then
+            local character = obj:FindFirstAncestorOfClass("Model")
+            if character and not isInLobby(character) then
+                if checkAmIInDangerZone(character) then performBlock(0) end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do refreshAllESP() end
+end)
+
+-- ==========================================
+-- Auto Generator Solver 
+-- ==========================================
+local isSolving = false
+
+local function triggerNodeClick(element)
+    pcall(function()
+        if firesignal then
+            firesignal(element.MouseEnter)
+            firesignal(element.InputBegan, {UserInputType = Enum.UserInputType.MouseButton1, UserInputState = Enum.UserInputState.Begin})
+            firesignal(element.TouchTap)
+            firesignal(element.MouseButton1Down)
+            firesignal(element.MouseButton1Click)
+            firesignal(element.Activated)
+        end
+        if getconnections then
+            for _, conn in pairs(getconnections(element.MouseButton1Click)) do conn:Fire() end
+            for _, conn in pairs(getconnections(element.Activated)) do conn:Fire() end
+        end
+    end)
+end
+
+task.spawn(function()
+    while task.wait(0.3) do
+        if not Settings.AutoSolver or isSolving then continue end
+
+        local activeNodes = {}
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then continue end
+
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if (desc:IsA("GuiButton") or desc:IsA("TextButton") or desc:IsA("ImageButton") or desc:IsA("Frame")) and desc.Visible and desc.AbsoluteSize.Y > 0 then
+                        
+                        local txt = (desc:IsA("TextButton") and desc.Text) or desc.Name
+                        local num = tonumber(string.match(txt, "^%d+$"))
+                        
+                        if num then
+                            table.insert(activeNodes, {btn = desc, num = num, parent = desc.Parent})
+                        end
+                    end
+                end
+            end
+        end
+
+        local pairsMap = {}
+        for _, node in ipairs(activeNodes) do
+            if not pairsMap[node.num] then pairsMap[node.num] = {} end
+            table.insert(pairsMap[node.num], node.btn)
+        end
+
+        local validPairsCount = 0
+        for num, btnList in pairs(pairsMap) do
+            if #btnList >= 2 then validPairsCount = validPairsCount + 1 end
+        end
+
+        if validPairsCount >= 2 then
+            isSolving = true
+            
+            for num, btnList in pairs(pairsMap) do
+                if #btnList >= 2 then
+                    local startNode = btnList[1]
+                    local endNode = btnList[2]
+
+                    triggerNodeClick(startNode)
+                    task.wait(Settings.SolverSpeed)
+                    triggerNodeClick(endNode)
+                    task.wait(Settings.SolverSpeed)
+                end
+            end
+
+            task.wait(1.2)
+            isSolving = false
+        end
+    end
+end)
