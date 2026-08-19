@@ -1,0 +1,643 @@
+-- ==========================================
+-- Services & Local Player
+-- ==========================================
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- Settings Configuration
+-- ==========================================
+local Settings = {
+    -- Auto Block & Combat Settings
+    MasterAutoBlock = true, 
+    HitboxEnabled = true,
+    AimbotPunch = true,
+    BoxSize = 6,
+    BoxColor = Color3.fromRGB(0, 255, 0),
+    BoxTransparency = 0.5,
+    GlowMode = true,
+    VisibleTime = 0.5,
+    
+    AutoBlockAnim = true,
+    AutoTurn = true, -- ฟังชั่นหันหน้าหา Killer อัตโนมัติ
+    BlockDelay = 0.01, -- ความเร็วสูงสุด 0.01 วิเป๊ะๆ
+    DetectionRange = 25, 
+    BlockAngle = 180, 
+    ShowQuickUI = true,
+
+    -- ESP Settings 
+    ESP_Killer = true,
+    Color_Killer = Color3.fromRGB(255, 0, 0),
+    ESP_Survivors = true,
+    Color_Survivors = Color3.fromRGB(0, 170, 255),
+    
+    ESP_Generators = true, 
+    Color_Generators = Color3.fromRGB(255, 255, 0), 
+
+    ESP_BloxyCola = true,
+    Color_BloxyCola = Color3.fromRGB(255, 255, 255),
+    ESP_Medkit = true,
+    Color_Medkit = Color3.fromRGB(0, 255, 0),
+    ESP_DigitalFootprint = true,
+    Color_DigitalFootprint = Color3.fromRGB(170, 0, 255),
+    ESP_PizzaDelivery = true,
+    Color_PizzaDelivery = Color3.fromRGB(255, 170, 0),
+    
+    -- Skill Warning Settings
+    ESP_Skills = true 
+}
+
+-- รายชื่อ Killer และ Survivors เฉพาะเจาะจง
+local KillerNamesList = {
+    ["azure"] = true, ["nosferatu"] = true, ["sixer"] = true, ["1x1x1x1"] = true,
+    ["noli"] = true, ["johndoe"] = true, ["c00lkidd"] = true, ["slasher"] = true
+}
+
+local SurvivorNamesList = {
+    ["guest 1337"] = true, ["chance"] = true, ["veeronica"] = true, ["dusckkar"] = true,
+    ["taph"] = true, ["two time"] = true, ["007n7"] = true, ["builderman"] = true,
+    ["jane doe"] = true, ["noob"] = true, ["elliot"] = true, ["shedletsky"] = true
+}
+
+-- ==========================================
+-- Helper: ตรวจสอบว่าอยู่ใน Lobby หรือไม่
+-- ==========================================
+local function isInLobby(obj)
+    if not obj then return false end
+    local current = obj
+    while current and current ~= Workspace do
+        local name = string.lower(current.Name)
+        if string.find(name, "lobby") or string.find(name, "waiting") or string.find(name, "menu") or string.find(name, "room") then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+-- ==========================================
+-- Data Dictionaries (Killer Windup IDs)
+-- ==========================================
+local KillerWindups = {
+    ["126830014841198"] = 0.2, ["130958529065375"] = 0.2, ["94958041603347"] = 0.2,
+    ["118298475669935"] = 0.2, ["109667959938617"] = 0.2, ["108196996477620"] = 0.2, ["125403313786645"] = 0.2,
+    ["18885909645"] = 0.1, ["84069821282466"] = 0.1, ["114126519127454"] = 0.1,
+    ["121858217776572"] = 0.1, ["99824350842479"] = 0.1, ["70371667919898"] = 0.1, ["70785407091644"] = 0.1,
+    ["105458270463374"] = 0.4, ["87347358451124"] = 0.4, ["121778755277919"] = 0.4,
+    ["88970503168421"] = 0.4, ["138938529389204"] = 0.4, ["123780556554672"] = 0.4, ["81299297965542"] = 0.4,
+    ["106538427162796"] = 0.35, ["92567970681901"] = 0.35, ["91509234639766"] = 0.35, ["77375846492436"] = 0.35,
+    ["83829782357897"] = 0.4, ["90620531468240"] = 0.4, ["126171487400618"] = 0.4,
+    ["114506382930939"] = 0.4, ["124705663396411"] = 0.4, ["99829427721752"] = 0.4, ["121293883585738"] = 0.4,
+    ["122709416391891"] = 0.3, ["88451353906104"] = 0.3, ["124269076578545"] = 0.3,
+    ["123172382755876"] = 0.22
+}
+
+local SkillKeywords = {
+    ["entanglement"] = "Entanglement",
+    ["mass infection"] = "Mass Infection",
+    ["massinfection"] = "Mass Infection",
+    ["infection"] = "Infection"
+}
+
+-- ==========================================
+-- Quick Toggle Floating UI
+-- ==========================================
+if CoreGui:FindFirstChild("DuckQuickToggle") then CoreGui.DuckQuickToggle:Destroy() end
+if LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("DuckQuickToggle") then LocalPlayer.PlayerGui.DuckQuickToggle:Destroy() end
+
+local QuickGui = Instance.new("ScreenGui")
+QuickGui.Name = "DuckQuickToggle"
+QuickGui.ResetOnSpawn = false
+local success = pcall(function() QuickGui.Parent = CoreGui end)
+if not success then QuickGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 130, 0, 40)
+ToggleBtn.Position = UDim2.new(0.5, -65, 0.1, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 14
+ToggleBtn.Text = "Auto Block: ON"
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Parent = QuickGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleBtn
+
+local dragging, dragInput, dragStart, startPos
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = ToggleBtn.Position
+    end
+end)
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+ToggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Settings.MasterAutoBlock = not Settings.MasterAutoBlock
+    ToggleBtn.Text = Settings.MasterAutoBlock and "Auto Block: ON" or "Auto Block: OFF"
+    ToggleBtn.TextColor3 = Settings.MasterAutoBlock and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 50, 50)
+end)
+QuickGui.Enabled = Settings.ShowQuickUI
+
+-- ==========================================
+-- ESP & Warning Engine 
+-- ==========================================
+local trackedESP = {}
+
+local ESPCategories = {
+    Killer = { ConfigKey = "ESP_Killer", ColorKey = "Color_Killer", Label = "Killer" },
+    Survivors = { ConfigKey = "ESP_Survivors", ColorKey = "Color_Survivors", Label = "Survivor" },
+    Generators = { ConfigKey = "ESP_Generators", ColorKey = "Color_Generators", Label = "Generator" },
+    BloxyCola = { ConfigKey = "ESP_BloxyCola", ColorKey = "Color_BloxyCola", Label = "Bloxy Cola" },
+    Medkit = { ConfigKey = "ESP_Medkit", ColorKey = "Color_Medkit", Label = "Medkit" },
+    DigitalFootprint = { ConfigKey = "ESP_DigitalFootprint", ColorKey = "Color_DigitalFootprint", Label = "Digital Footprint" },
+    PizzaDelivery = { ConfigKey = "ESP_PizzaDelivery", ColorKey = "Color_PizzaDelivery", Label = "Pizza Delivery" }
+}
+
+local function drawSkillDirection(part, skillName)
+    if not part or not part:IsA("BasePart") then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "SkillWarningBillboard"
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 5, 0)
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.GothamBlack
+    textLabel.TextSize = 22
+    textLabel.Text = "⚠️ " .. string.upper(skillName) .. " ⚠️"
+    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    textLabel.TextStrokeTransparency = 0
+    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.Parent = billboard
+    billboard.Parent = part
+
+    local arrowLength = 15
+    local cylinder = Instance.new("CylinderHandleAdornment")
+    cylinder.Radius = 0.5
+    cylinder.Height = arrowLength
+    cylinder.Color3 = Color3.fromRGB(255, 50, 50)
+    cylinder.Transparency = 0.2
+    cylinder.AlwaysOnTop = true
+    cylinder.ZIndex = 10
+    cylinder.Adornee = part
+    cylinder.CFrame = CFrame.new(0, 0, -arrowLength/2) 
+    cylinder.Parent = part
+
+    local cone = Instance.new("ConeHandleAdornment")
+    cone.Radius = 2
+    cone.Height = 4
+    cone.Color3 = Color3.fromRGB(255, 0, 0)
+    cone.Transparency = 0.2
+    cone.AlwaysOnTop = true
+    cone.ZIndex = 10
+    cone.Adornee = part
+    cone.CFrame = CFrame.new(0, 0, -arrowLength) 
+    cone.Parent = part
+    
+    Debris:AddItem(billboard, 6)
+    Debris:AddItem(cylinder, 6)
+    Debris:AddItem(cone, 6)
+end
+
+local function classifyESPObject(obj)
+    if not obj or not obj.Parent then return nil end
+    if isInLobby(obj) then return nil end 
+    if not (obj:IsA("Model") or obj:IsA("Tool") or obj:IsA("BasePart")) then return nil end
+    
+    if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then return nil end
+    if obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then return nil end
+
+    local name = string.lower(obj.Name)
+
+    if obj:IsA("Model") and obj:FindFirstChild("Humanoid") then
+        for kName, _ in pairs(KillerNamesList) do
+            if string.find(name, kName) or string.find(string.lower(obj.Name), kName) then return "Killer" end
+        end
+        if string.find(name, "killer") then return "Killer" end
+
+        for sName, _ in pairs(SurvivorNamesList) do
+            if string.find(name, sName) or string.find(string.lower(obj.Name), sName) then return "Survivors" end
+        end
+        if string.find(name, "survivor") then return "Survivors" end
+        
+        local p = Players:GetPlayerFromCharacter(obj)
+        if p and p ~= LocalPlayer then return "Survivors" end
+    else
+        if string.find(name, "fake") then return nil end
+        if string.find(name, "generator") then return "Generators" end
+        if name == "bloxycola" or name == "bloxy cola" or name == "cola" then return "BloxyCola" end
+        if name == "medkit" or name == "med kit" then return "Medkit" end
+        if name == "digital footprint" or name == "digitalfootprint" then return "DigitalFootprint" end
+        if name == "pizza delivery" or name == "pizzadelivery" or name == "pizza box" then return "PizzaDelivery" end
+    end
+    return nil
+end
+
+local function getGeneratorProgressNumeric(genObj)
+    if not genObj then return 0 end
+    local currentVal = 0
+    for _, attrName in ipairs({"Progress", "Percent", "State", "Completed", "Repair"}) do
+        local attr = genObj:GetAttribute(attrName)
+        if type(attr) == "number" then
+            currentVal = attr
+            break
+        end
+    end
+
+    if currentVal == 0 then
+        local valObj = genObj:FindFirstChild("Progress", true) or genObj:FindFirstChild("Value", true) or genObj:FindFirstChild("Percent", true)
+        if valObj and (valObj:IsA("NumberValue") or valObj:IsA("IntValue")) then
+            currentVal = valObj.Value
+        end
+    end
+    return currentVal
+end
+
+local function updateSingleESP(obj, catKey)
+    if not obj or not obj.Parent or isInLobby(obj) then return end
+    local info = ESPCategories[catKey]
+    if not info then return end
+
+    local isEnabled = Settings[info.ConfigKey]
+    local color = Settings[info.ColorKey]
+
+    if catKey == "Generators" then
+        local progress = getGeneratorProgressNumeric(obj)
+        if progress >= 100 or progress == 4 then
+            color = Color3.fromRGB(0, 255, 0)
+        end
+    end
+
+    local highlight = obj:FindFirstChild("DuckHighlight")
+    if isEnabled then
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "DuckHighlight"
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.Parent = obj
+        end
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.Enabled = true
+    else
+        if highlight then highlight.Enabled = false end
+    end
+end
+
+local function refreshAllESP()
+    for obj, catKey in pairs(trackedESP) do
+        local isSelf = false
+        if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then isSelf = true end
+        if obj and obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then isSelf = true end
+
+        if obj and obj.Parent and not isInLobby(obj) and not isSelf then
+            updateSingleESP(obj, catKey)
+        else
+            if obj and obj:FindFirstChild("DuckHighlight") then obj.DuckHighlight:Destroy() end
+            trackedESP[obj] = nil
+        end
+    end
+end
+
+local function registerESPObject(obj)
+    if isInLobby(obj) then return end
+    local catKey = classifyESPObject(obj)
+    if catKey then
+        local currentParent = obj.Parent
+        local isNested = false
+        while currentParent and currentParent ~= Workspace do
+            if trackedESP[currentParent] then
+                isNested = true
+                break
+            end
+            currentParent = currentParent.Parent
+        end
+        if not isNested then
+            trackedESP[obj] = catKey
+            updateSingleESP(obj, catKey)
+        end
+    end
+end
+
+-- ==========================================
+-- UI Setup (Rayfield Library)
+-- ==========================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+   Name = "Duck Hub 🇹🇭",
+   LoadingTitle = "กำลังโหลดสคริปต์...",
+   LoadingSubtitle = "Auto block และอื่นๆ",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false,
+})
+
+local CombatTab = Window:CreateTab("Combat & Hitbox", 4483362458)
+local AutoBlockTab = Window:CreateTab("Auto Block", 4483362458)
+local ESPTab = Window:CreateTab("Visuals (ESP)", 4483362458)
+
+CombatTab:CreateToggle({ Name = "Aimbot Killer เมื่อกดปุ่ม Punch", CurrentValue = Settings.AimbotPunch, Callback = function(v) Settings.AimbotPunch = v end })
+CombatTab:CreateToggle({ Name = "แสดง hitbox เมื่อ killer m1", CurrentValue = Settings.HitboxEnabled, Callback = function(v) Settings.HitboxEnabled = v end })
+CombatTab:CreateSlider({ Name = "ขนาด hitbox", Range = {3, 15}, Increment = 0.5, CurrentValue = Settings.BoxSize, Callback = function(v) Settings.BoxSize = v end })
+CombatTab:CreateSlider({ Name = "ความใส", Range = {0, 1}, Increment = 0.1, CurrentValue = Settings.BoxTransparency, Callback = function(v) Settings.BoxTransparency = v end })
+CombatTab:CreateColorPicker({ Name = "สี hitbox", Color = Settings.BoxColor, Callback = function(v) Settings.BoxColor = v end })
+
+AutoBlockTab:CreateToggle({ Name = "เปิดปิด auto block ด่วน", CurrentValue = Settings.ShowQuickUI, Callback = function(v) QuickGui.Enabled = v end })
+AutoBlockTab:CreateToggle({ Name = "Auto Block (ดักจับ อนิเมชั่น/เสียง)", CurrentValue = Settings.AutoBlockAnim, Callback = function(v) Settings.AutoBlockAnim = v end })
+AutoBlockTab:CreateToggle({ Name = "หันตัวละครหา Killer อัตโนมัติ (Aim Assist)", CurrentValue = Settings.AutoTurn, Callback = function(v) Settings.AutoTurn = v end })
+AutoBlockTab:CreateSlider({ Name = "Block Delay (ความเร็วเป๊ะๆ)", Range = {0, 1}, Increment = 0.01, CurrentValue = Settings.BlockDelay, Callback = function(v) Settings.BlockDelay = v end })
+AutoBlockTab:CreateSection("Auto Block Detection Settings")
+AutoBlockTab:CreateSlider({ Name = "Block Distance (Range)", Range = {5, 40}, Increment = 1, CurrentValue = Settings.DetectionRange, Callback = function(v) Settings.DetectionRange = v end })
+AutoBlockTab:CreateSlider({ Name = "Block Angle (Width)", Range = {30, 180}, Increment = 5, CurrentValue = Settings.BlockAngle, Callback = function(v) Settings.BlockAngle = v end })
+
+ESPTab:CreateSection("แจ้งเตือนทิศทางสกิล (Skill Warning)")
+ESPTab:CreateToggle({ Name = "แสดงลูกศรทิศทางสกิล", CurrentValue = Settings.ESP_Skills, Callback = function(v) Settings.ESP_Skills = v end })
+
+ESPTab:CreateSection("มองทะลุ ผู้รอดชีวิต & ฆาตกร")
+ESPTab:CreateToggle({ Name = "Killer ESP", CurrentValue = Settings.ESP_Killer, Callback = function(v) Settings.ESP_Killer = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Killer Color", Color = Settings.Color_Killer, Callback = function(v) Settings.Color_Killer = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "Survivors ESP", CurrentValue = Settings.ESP_Survivors, Callback = function(v) Settings.ESP_Survivors = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Survivors Color", Color = Settings.Color_Survivors, Callback = function(v) Settings.Color_Survivors = v; refreshAllESP() end })
+
+ESPTab:CreateSection("มองทะลุเครื่องปั่นไฟ & ของ")
+ESPTab:CreateToggle({ Name = "มองเครื่องปั่นไฟ (100% จะเป็นสีเขียว)", CurrentValue = Settings.ESP_Generators, Callback = function(v) Settings.ESP_Generators = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "BloxyCola ESP", CurrentValue = Settings.ESP_BloxyCola, Callback = function(v) Settings.ESP_BloxyCola = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "BloxyCola Color", Color = Settings.Color_BloxyCola, Callback = function(v) Settings.Color_BloxyCola = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "Medkit ESP", CurrentValue = Settings.ESP_Medkit, Callback = function(v) Settings.ESP_Medkit = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "Medkit Color", Color = Settings.Color_Medkit, Callback = function(v) Settings.Color_Medkit = v; refreshAllESP() end })
+
+ESPTab:CreateSection("มองทะลุสกิล & ไอเทมเพิ่มเติม")
+ESPTab:CreateToggle({ Name = "DIGITAL FOOTPRINT ESP", CurrentValue = Settings.ESP_DigitalFootprint, Callback = function(v) Settings.ESP_DigitalFootprint = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "DIGITAL FOOTPRINT Color", Color = Settings.Color_DigitalFootprint, Callback = function(v) Settings.Color_DigitalFootprint = v; refreshAllESP() end })
+ESPTab:CreateToggle({ Name = "PIZZA DELIVERY ESP", CurrentValue = Settings.ESP_PizzaDelivery, Callback = function(v) Settings.ESP_PizzaDelivery = v; refreshAllESP() end })
+ESPTab:CreateColorPicker({ Name = "PIZZA DELIVERY Color", Color = Settings.Color_PizzaDelivery, Callback = function(v) Settings.Color_PizzaDelivery = v; refreshAllESP() end })
+
+-- ==========================================
+-- Combat Logic, Auto Block & Face Attacker
+-- ==========================================
+local hookedPunchButtons = {}
+
+task.spawn(function()
+    while task.wait(1) do
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if pGui then
+            for _, desc in ipairs(pGui:GetDescendants()) do
+                if (desc:IsA("GuiButton") or desc:IsA("ImageButton") or desc:IsA("TextButton")) and desc.Name == "Punch" then
+                    if not hookedPunchButtons[desc] then
+                        hookedPunchButtons[desc] = true
+                        local function triggerAimbot()
+                            if Settings.AimbotPunch then
+                                local nearest = nil
+                                local minDist = math.huge
+                                local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                
+                                if myHRP then
+                                    for obj, cat in pairs(trackedESP) do
+                                        if cat == "Killer" and obj:FindFirstChild("HumanoidRootPart") then
+                                            local dist = (obj.HumanoidRootPart.Position - myHRP.Position).Magnitude
+                                            if dist < minDist then
+                                                minDist = dist
+                                                nearest = obj.HumanoidRootPart
+                                            end
+                                        end
+                                    end
+                                    if nearest and workspace.CurrentCamera then
+                                        workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, nearest.Position)
+                                        myHRP.CFrame = CFrame.new(myHRP.Position, Vector3.new(nearest.Position.X, myHRP.Position.Y, nearest.Position.Z))
+                                    end
+                                end
+                            end
+                        end
+                        desc.MouseButton1Down:Connect(triggerAimbot)
+                        desc.TouchTap:Connect(triggerAimbot)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+local blockCooldown = false
+local function performBlock()
+    if blockCooldown or not Settings.MasterAutoBlock then return end
+    blockCooldown = true
+    
+    local function clickBlock()
+        pcall(function()
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+            local blockButton = pGui and pGui:FindFirstChild("MainUI") and pGui.MainUI:FindFirstChild("AbilityContainer") and pGui.MainUI.AbilityContainer:FindFirstChild("Block")
+            
+            if blockButton then
+                if firesignal then
+                    firesignal(blockButton.Activated)
+                    firesignal(blockButton.TouchTap)
+                    firesignal(blockButton.MouseButton1Down)
+                    firesignal(blockButton.MouseButton1Click)
+                end
+                if getconnections then
+                    for _, conn in ipairs(getconnections(blockButton.Activated)) do conn:Fire() end
+                    for _, conn in ipairs(getconnections(blockButton.TouchTap)) do conn:Fire() end
+                    for _, conn in ipairs(getconnections(blockButton.MouseButton1Click)) do conn:Fire() end
+                end
+            end
+            -- กดปุ่ม E (Block) ด้วยความเร็ว 0.01 วิแล้วปล่อย
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.01)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+    end
+
+    -- โจมตีแบบไม่มีดีเลย์เลย ทำงานทันที
+    if Settings.BlockDelay <= 0.01 then 
+        clickBlock()
+    else 
+        task.delay(Settings.BlockDelay, clickBlock) 
+    end
+    
+    task.delay(0.05, function() blockCooldown = false end)
+end
+
+local function faceAttacker(attacker)
+    if not Settings.AutoTurn then return end
+    local myChar = LocalPlayer.Character
+    if not myChar or isInLobby(myChar) then return end
+    
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local enemyHRP = attacker:FindFirstChild("HumanoidRootPart") or attacker.PrimaryPart
+    
+    if myHRP and enemyHRP then
+        -- ล็อก CFrame ให้หมุนไปมอง Killer ทันทีในพิกัดแกน X, Z (รักษาระดับแกน Y ไว้เพื่อไม่ให้หน้าคะมำ)
+        local targetPos = Vector3.new(enemyHRP.Position.X, myHRP.Position.Y, enemyHRP.Position.Z)
+        myHRP.CFrame = CFrame.new(myHRP.Position, targetPos)
+    end
+end
+
+local function checkAmIInDangerZone(attacker)
+    if not attacker or isInLobby(attacker) or isInLobby(LocalPlayer.Character) then return false end
+    if attacker == LocalPlayer.Character then return false end
+    
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local enemyHRP = attacker:FindFirstChild("HumanoidRootPart") or attacker.PrimaryPart
+    
+    if myHRP and enemyHRP then
+        local myPos2D = Vector3.new(myHRP.Position.X, 0, myHRP.Position.Z)
+        local enemyPos2D = Vector3.new(enemyHRP.Position.X, 0, enemyHRP.Position.Z)
+        local distance = (myPos2D - enemyPos2D).Magnitude
+        
+        if distance <= Settings.DetectionRange then
+            local enemyLookVector = enemyHRP.CFrame.LookVector
+            local enemyLook2D = Vector3.new(enemyLookVector.X, 0, enemyLookVector.Z).Unit
+            local directionToMe = (myPos2D - enemyPos2D).Unit
+            
+            local dotProduct = math.clamp(enemyLook2D:Dot(directionToMe), -1, 1)
+            local angle = math.deg(math.acos(dotProduct))
+            
+            if angle <= (Settings.BlockAngle / 2) then return true end
+        end
+    end
+    return false
+end
+
+local function drawHitbox(character)
+    if not Settings.HitboxEnabled or isInLobby(character) then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart or character:FindFirstChild("Torso")
+    if not hrp then return end
+
+    local box = Instance.new("Part")
+    box.Name = "M1_Predict_Box"
+    box.Size = Vector3.new(Settings.BoxSize, Settings.BoxSize + 1, Settings.BoxSize) 
+    box.Color = Settings.BoxColor
+    box.Transparency = Settings.BoxTransparency
+    box.Material = Settings.GlowMode and Enum.Material.Neon or Enum.Material.SmoothPlastic
+    box.CanCollide = false
+    box.CanQuery = false
+    box.Massless = true
+    box.Anchored = false 
+
+    local forwardOffset = - (Settings.BoxSize / 2) - 1.5
+    box.CFrame = hrp.CFrame * CFrame.new(0, 0, forwardOffset)
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = hrp
+    weld.Part1 = box
+    weld.Parent = box
+
+    box.Parent = Workspace
+    Debris:AddItem(box, Settings.VisibleTime)
+end
+
+-- ==========================================
+-- System Listeners (Animation 0.01s + Sound 0.01s)
+-- ==========================================
+local activeCooldowns = {}
+local hookedEntities = {}
+
+local function TriggerDefense(character)
+    if Settings.AutoBlockAnim and Settings.MasterAutoBlock then
+        if checkAmIInDangerZone(character) then 
+            faceAttacker(character) -- หันตัวเข้าหาทันที (0.01 วิ)
+            performBlock() -- บล็อกทันที (0.01 วิเป๊ะๆ)
+        end
+    end
+
+    if not activeCooldowns[character] then
+        activeCooldowns[character] = true
+        task.spawn(function() drawHitbox(character) end)
+        task.delay(Settings.VisibleTime, function() activeCooldowns[character] = false end)
+    end
+end
+
+local function setupEntityTracking(entity)
+    if hookedEntities[entity] or isInLobby(entity) then return end
+    hookedEntities[entity] = true
+
+    -- 1. ดักจับจาก Animator
+    local humanoid = entity:WaitForChild("Humanoid", 3)
+    if humanoid then
+        local animator = humanoid:WaitForChild("Animator", 3)
+        if animator then
+            animator.AnimationPlayed:Connect(function(track)
+                local animId = track.Animation and track.Animation.AnimationId
+                if not animId then return end
+                local numId = string.match(animId, "%d+")
+                
+                if numId and KillerWindups[numId] then
+                    TriggerDefense(entity)
+                end
+            end)
+        end
+    end
+
+    -- 2. ดักจับจาก Sound (เสริมความเร็วระดับ 0.01 วิ หากอนิเมชั่นเซิร์ฟเวอร์ดีเลย์)
+    entity.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Sound") then
+            descendant:GetPropertyChangedSignal("Playing"):Connect(function()
+                if descendant.Playing then
+                    local sName = string.lower(descendant.Name)
+                    local sId = string.lower(descendant.SoundId)
+                    -- ตรวจสอบ ID หรือชื่อเสียงที่บ่งบอกว่ากำลังง่างอาวุธ หรือสวิง
+                    if string.find(sId, "swing") or string.find(sId, "windup") or string.find(sName, "attack") or string.find(sName, "m1") then
+                        TriggerDefense(entity)
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+-- ==========================================
+-- Initialization
+-- ==========================================
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if obj:IsA("Model") then setupEntityTracking(obj) end
+    registerESPObject(obj)
+end
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if isInLobby(obj) then return end
+    if obj:IsA("Model") then setupEntityTracking(obj) end
+    registerESPObject(obj)
+
+    local objName = string.lower(obj.Name)
+    for keyword, displayName in pairs(SkillKeywords) do
+        if string.find(objName, keyword) then
+            if Settings.ESP_Skills then
+                task.spawn(function()
+                    task.wait(0.05) 
+                    local targetPart = obj:IsA("BasePart") and obj or (obj:IsA("Model") and obj.PrimaryPart)
+                    if targetPart then
+                        drawSkillDirection(targetPart, displayName)
+                    end
+                end)
+            end
+            break
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do refreshAllESP() end
+end)
