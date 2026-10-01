@@ -593,20 +593,17 @@ local function startAimbot(target, duration)
 end
 
 -- ==========================================
--- ⚡ Zero-Delay Lua Spoofing (รองรับเมาส์ & คีย์บอร์ด 100%)
+-- ⚡ Zero-Delay Lua Spoofing (รองรับมือถือ 100%)
 -- ==========================================
 local UIS = game:GetService("UserInputService")
 local lastBlockTime = 0
 
 -- สร้าง InputObject ปลอมแบบปรับตามประเภทของปุ่มอัตโนมัติ
 local function createFakeInput(inputEnum, state)
-    -- ตรวจสอบว่าค่าที่ใส่เข้ามาเป็น UserInputType (เช่น เมาส์) หรือไม่
     local isMouse = (inputEnum.EnumType == Enum.UserInputType)
     
     return setmetatable({
-        -- ถ้าเป็นเมาส์ KeyCode จะต้องเป็น Unknown
         KeyCode = isMouse and Enum.KeyCode.Unknown or inputEnum,
-        -- กำหนดประเภทให้ตรงกันว่าเป็น เมาส์ หรือ คีย์บอร์ด
         UserInputType = isMouse and inputEnum or Enum.UserInputType.Keyboard,
         UserInputState = state,
         Delta = Vector3.new(0, 0, 0)
@@ -627,8 +624,8 @@ local function performBlock()
     if now - lastBlockTime < 0.1 then return end 
     lastBlockTime = now
 
-    -- สั่งตั้งการ์ดด้วยคลิกซ้าย (LMB)
-    local blockInput = Enum.UserInputType.MouseButton1 
+    -- เปลี่ยนเป้าหมายการกดบล็อกเป็นปุ่ม Q
+    local blockInput = Enum.KeyCode.Q 
     local fakeInputBegan = createFakeInput(blockInput, Enum.UserInputState.Begin)
     local fakeInputEnded = createFakeInput(blockInput, Enum.UserInputState.End)
 
