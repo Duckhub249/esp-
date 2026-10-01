@@ -593,21 +593,25 @@ local function startAimbot(target, duration)
 end
 
 -- ==========================================
--- ⚡ Zero-Delay Lua Spoofing (แก้จอยมือถือค้าง 100%)
+-- ⚡ Zero-Delay Lua Spoofing (รองรับเมาส์ & คีย์บอร์ด 100%)
 -- ==========================================
 local UIS = game:GetService("UserInputService")
 local lastBlockTime = 0
 
--- สร้าง InputObject ปลอม เพื่อป้องกันสคริปต์เกมตรวจสอบแล้ว Error
-local function createFakeInput(keyCode, state)
+-- สร้าง InputObject ปลอมแบบปรับตามประเภทของปุ่มอัตโนมัติ
+local function createFakeInput(inputEnum, state)
+    -- ตรวจสอบว่าค่าที่ใส่เข้ามาเป็น UserInputType (เช่น เมาส์) หรือไม่
+    local isMouse = (inputEnum.EnumType == Enum.UserInputType)
+    
     return setmetatable({
-        KeyCode = keyCode,
-        UserInputType = Enum.UserInputType.Keyboard,
+        -- ถ้าเป็นเมาส์ KeyCode จะต้องเป็น Unknown
+        KeyCode = isMouse and Enum.KeyCode.Unknown or inputEnum,
+        -- กำหนดประเภทให้ตรงกันว่าเป็น เมาส์ หรือ คีย์บอร์ด
+        UserInputType = isMouse and inputEnum or Enum.UserInputType.Keyboard,
         UserInputState = state,
         Delta = Vector3.new(0, 0, 0)
     }, {
         __index = function(self, key)
-            -- รองรับกรณีที่เกมเรียกใช้ฟังก์ชันเช็คปุ่มพิเศษ (Shift, Ctrl)
             if key == "IsModifierKeyDown" then
                 return function() return false end
             end
@@ -623,12 +627,11 @@ local function performBlock()
     if now - lastBlockTime < 0.1 then return end 
     lastBlockTime = now
 
-    local blockKey = Enum.UserInputType.MouseButton1 
-    local fakeInputBegan = createFakeInput(blockKey, Enum.UserInputState.Begin)
-    local fakeInputEnded = createFakeInput(blockKey, Enum.UserInputState.End)
+    -- สั่งตั้งการ์ดด้วยคลิกซ้าย (LMB)
+    local blockInput = Enum.UserInputType.MouseButton1 
+    local fakeInputBegan = createFakeInput(blockInput, Enum.UserInputState.Begin)
+    local fakeInputEnded = createFakeInput(blockInput, Enum.UserInputState.End)
 
-    -- ใช้ getconnections ยิงสัญญาณไปที่ LocalScript ของเกมโดยตรง 
-    -- (ข้ามระบบ Hardware ทำให้ Roblox ไม่สลับโหมดเป็น PC จอยจึงไม่หาย)
     if getconnections then
         for _, conn in pairs(getconnections(UIS.InputBegan)) do
             pcall(function() conn.Function(fakeInputBegan, false) end)
