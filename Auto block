@@ -621,27 +621,18 @@ local function performBlock()
     if not Settings.MasterAutoBlock then return end
     
     local now = os.clock()
-    if now - lastBlockTime < 0.1 then return end 
+    -- นำ Settings.BlockDelay มาคำนวณด้วย เพื่อให้การตั้งค่าดีเลย์ใน UI ใช้งานได้จริง
+    if now - lastBlockTime < (0.1 + Settings.BlockDelay) then return end 
     lastBlockTime = now
 
-    -- เปลี่ยนเป้าหมายการกดบล็อกเป็นปุ่ม Q
-    local blockInput = Enum.KeyCode.Q 
-    local fakeInputBegan = createFakeInput(blockInput, Enum.UserInputState.Begin)
-    local fakeInputEnded = createFakeInput(blockInput, Enum.UserInputState.End)
-
-    if getconnections then
-        for _, conn in pairs(getconnections(UIS.InputBegan)) do
-            pcall(function() conn.Function(fakeInputBegan, false) end)
-        end
+    -- ใช้ VirtualInputManager ส่งคำสั่งกดปุ่มเข้าเอนจิ้นเกมโดยตรง (รองรับมือถือ 100%)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
         
         task.delay(0.05, function()
-            for _, conn in pairs(getconnections(UIS.InputEnded)) do
-                pcall(function() conn.Function(fakeInputEnded, false) end)
-            end
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
         end)
-    else
-        warn("Executor ของคุณไม่รองรับ getconnections()")
-    end
+    end)
 end
 
 -- ==========================================
