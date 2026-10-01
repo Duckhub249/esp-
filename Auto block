@@ -593,30 +593,55 @@ local function startAimbot(target, duration)
 end
 
 -- ==========================================
--- ⚡ Zero-Delay Hardware Key Spoofing (Mobile & PC Safe)
+-- ⚡ Zero-Delay Lua Spoofing (แก้จอยมือถือค้าง 100%)
 -- ==========================================
-local VIM = game:GetService("VirtualInputManager")
+local UIS = game:GetService("UserInputService")
 local lastBlockTime = 0
+
+-- สร้าง InputObject ปลอม เพื่อป้องกันสคริปต์เกมตรวจสอบแล้ว Error
+local function createFakeInput(keyCode, state)
+    return setmetatable({
+        KeyCode = keyCode,
+        UserInputType = Enum.UserInputType.Keyboard,
+        UserInputState = state,
+        Delta = Vector3.new(0, 0, 0)
+    }, {
+        __index = function(self, key)
+            -- รองรับกรณีที่เกมเรียกใช้ฟังก์ชันเช็คปุ่มพิเศษ (Shift, Ctrl)
+            if key == "IsModifierKeyDown" then
+                return function() return false end
+            end
+            return nil
+        end
+    })
+end
 
 local function performBlock()
     if not Settings.MasterAutoBlock then return end
     
     local now = os.clock()
-    -- หน่วงเวลาคูลดาวน์ป้องกันการสแปมปุ่มรัวเกินไปจนมือถือค้าง (ปรับค่าน้อยสุดที่ 0.05)
     if now - lastBlockTime < 0.1 then return end 
     lastBlockTime = now
 
-    -- กำหนดปุ่มที่ใช้ Block ในเกม (ค่าเริ่มต้นคือ F ให้เปลี่ยนตามปุ่มบล็อกจริงของเกม)
-    local blockKey = Enum.KeyCode.E 
+    local blockKey = Enum.KeyCode.F 
+    local fakeInputBegan = createFakeInput(blockKey, Enum.UserInputState.Begin)
+    local fakeInputEnded = createFakeInput(blockKey, Enum.UserInputState.End)
 
-    -- ส่งคำสั่งกดปุ่มลง (KeyDown)
-    VIM:SendKeyEvent(true, blockKey, false, game)
-    
-    -- ต้องมีการหน่วงเวลาเล็กน้อยก่อนปล่อยปุ่ม เพื่อให้ LocalScript ของเกมรับรู้ว่ามีการกดจริง
-    -- และส่งคำสั่งปล่อยปุ่ม (KeyUp) เพื่อป้องกันอนิเมชั่นค้างหรือจอยสติ๊กขยับไม่ได้
-    task.delay(0.05, function()
-        VIM:SendKeyEvent(false, blockKey, false, game)
-    end)
+    -- ใช้ getconnections ยิงสัญญาณไปที่ LocalScript ของเกมโดยตรง 
+    -- (ข้ามระบบ Hardware ทำให้ Roblox ไม่สลับโหมดเป็น PC จอยจึงไม่หาย)
+    if getconnections then
+        for _, conn in pairs(getconnections(UIS.InputBegan)) do
+            pcall(function() conn.Function(fakeInputBegan, false) end)
+        end
+        
+        task.delay(0.05, function()
+            for _, conn in pairs(getconnections(UIS.InputEnded)) do
+                pcall(function() conn.Function(fakeInputEnded, false) end)
+            end
+        end)
+    else
+        warn("Executor ของคุณไม่รองรับ getconnections()")
+    end
 end
 
 -- ==========================================
