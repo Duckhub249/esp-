@@ -1,0 +1,1996 @@
+-- ==========================================
+-- Services & Local Player
+-- ==========================================
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+-- ==========================================
+-- Buffer Setup (Block - Optimized for Mobile Executors)
+-- ==========================================
+local cachedBlockBuffer = nil
+
+pcall(function()
+    local blockBytes = { 3, 5, 0, 0, 0, 66, 108, 111, 99, 107 }
+    
+    if buffer and buffer.create then
+        -- วิธีมาตรฐานของ Luau Buffer
+        cachedBlockBuffer = buffer.create(#blockBytes)
+        for i = 1, #blockBytes do
+            buffer.writeu8(cachedBlockBuffer, i - 1, blockBytes[i])
+        end
+    elseif buffer and buffer.fromstring then
+        -- วิธีสำรองกรณีรันเตอร์รองรับ fromstring
+        local str = ""
+        for _, b in ipairs(blockBytes) do
+            str = str .. string.char(b)
+        end
+        cachedBlockBuffer = buffer.fromstring(str)
+    end
+end)
+
+
+-- ==========================================
+-- Settings Configuration
+-- ==========================================
+local Settings = {
+    MasterAutoBlock = true, 
+    AutoBlockSound = true,
+    BlockDelay = 0, 
+    ShowQuickUI = true,
+
+    HitboxEnabled = true,
+    BoxSizeWidth = 9,
+    BoxSizeHeight = 7,
+    BoxSizeDepth = 12.3,
+    HitboxDistance = 0.01,
+    BoxColor = Color3.fromRGB(0, 255, 0),
+    BoxTransparency = 0.5,
+    GlowMode = true,
+    VisibleTime = 0.4,
+    
+    IgnoreBehead = true,
+    
+    AimbotEnabled = true,
+    AimbotSpeed = 1, 
+    AimbotPrediction = 0.4,
+    AimbotRange = 40,
+    AimbotDuration = 1,
+    
+    AutoGenEnabled = false,
+    AutoGenSpeed = 0.05,
+    HidePuzzleUI = true,
+    Language = "TH",
+    
+     -- ESP Settings
+    EspKiller = true,
+    EspKillerColor = Color3.fromRGB(255, 0, 0), -- แดง
+    EspSurvivors = true,
+    EspSurvivorsColor = Color3.fromRGB(0, 170, 255), -- ฟ้า
+    EspGenerators = true,
+    EspGeneratorsColor = Color3.fromRGB(255, 255, 0), -- เหลือง (เริ่มต้น)
+    EspBot = true,
+    EspBotColor = Color3.fromRGB(255, 100, 100), -- แดงอ่อน
+    EspShadow = true,
+    EspShadowColor = Color3.fromRGB(255, 105, 180), -- ชมพู
+    EspItems = true,
+    EspBloxyColor = Color3.fromRGB(255, 255, 255), -- ขาว
+    EspMedkitColor = Color3.fromRGB(170, 0, 255), -- ม่วง
+    EspItemsColor = Color3.fromRGB(0, 255, 150),
+    
+    -- Survivor Stamina
+    SurvInfStamina = false, SurvEnableMaxStamina = false, SurvMaxStamina = 100,
+    SurvEnableStaminaGain = false, SurvStaminaGain = 20, SurvEnableStaminaLoss = false, SurvStaminaLoss = 10,
+    SurvEnableSprintSpeed = false, SurvSprintSpeed = 26,
+    
+    -- Killer Stamina
+    KillerInfStamina = false, KillerEnableMaxStamina = false, KillerMaxStamina = 110,
+    KillerEnableStaminaGain = false, KillerStaminaGain = 21, KillerEnableStaminaLoss = false, KillerStaminaLoss = 9.5,
+    KillerEnableSprintSpeed = false, KillerSprintSpeed = 28
+}
+
+-- ==========================================
+-- Sound IDs List & Behead IDs
+-- ==========================================
+local KillerSounds = {
+    ["94317217837143"] = true, ["105840448036441"] = true, ["99215225043220"] = true, ["108907358619313"] = true,
+    ["107444859834748"] = true, ["124903763333174"] = true, ["123835423223220"] = true, ["112809109188560"] = true,
+    ["123923371062204"] = true, ["137809737339569"] = true, ["131123355704017"] = true, ["98675142200448"] = true,
+    ["109246041199659"] = true, ["140242176732868"] = true, ["105204810054381"] = true, ["80516583309685"] = true,
+    ["128195973631079"] = true, ["84307400688050"] = true, ["98733709078792"] = true, ["124234993291213"] = true,
+    ["82221759983649"] = true, ["75330693422988"] = true, ["117173212095661"] = true, ["74809026448465"] = true,
+    ["119942598489800"] = true, ["88589682639517"] = true, ["121954639447247"] = true, ["128856426573270"] = true,
+    ["85853080745515"] = true, ["109348678063422"] = true, ["80540530406270"] = true, ["131406927389838"] = true,
+    ["128367348686124"] = true, ["89004992452376"] = true, ["108610718831698"] = true, ["109570290393196"] = true,
+    ["96594507550917"] = true, ["125213046326879"] = true, ["79980897195554"] = true, ["93299090238530"] = true,
+    ["138547840635558"] = true, ["119664480754070"] = true, ["104910828105172"] = true, ["116581754553533"] = true,
+    ["92869747208256"] = true, ["114742322778642"] = true, ["70739368096233"] = true, ["96117920303138"] = true,
+    ["135319730390518"] = true, ["98742773509325"] = true, ["74842815979546"] = true, ["127557531826290"] = true,
+    ["108651070773439"] = true, ["105516183226360"] = true, ["113413858159336"] = true, ["105658601731267"] = true,
+    ["84116622032112"] = true, ["73662192846371"] = true, ["133709029886490"] = true, ["79612713897495"] = true,
+    ["94632255644411"] = true, ["71805956520207"] = true, ["139996647355899"] = true, ["77649238882198"] = true,
+    ["115678417928765"] = true, ["119583605486352"] = true, ["118562842802948"] = true, ["132581672170205"] = true,
+}
+
+local SoundCustomConfig = {
+    -- Sixer M1 (เสียงเร็ว) -> เปิดระบบ Instant Close Range
+    ["119583605486352"] = { 
+        instantCloseRange = true, -- บล็อกทันทีถ้าอยู่ในระยะประชิด
+        maxDistance = 11,         -- ระยะประชิด (studs) ถ้าห่างเกินนี้จะไม่บล็อกมั่ว
+        visibleTime = 0.3
+    },
+}
+
+local BeheadIDs = {
+    ["86566726496558"] = true, ["126727756047566"] = true, ["126355327951215"] = true,
+    ["82113744478546"] = true, ["126681776859538"] = true, ["116250166603410"] = true,
+    ["89182710199063"] = true,
+}
+
+local KillerNamesList = {
+    ["azure"] = true, ["nosferatu"] = true, ["sixer"] = true, ["1x1x1x1"] = true,
+    ["noli"] = true, ["johndoe"] = true, ["c00lkidd"] = true, ["slasher"] = true
+}
+
+-- ==========================================
+-- Helper Functions
+-- ==========================================
+local function extractSoundId(soundIdUrl)
+    if not soundIdUrl or soundIdUrl == "" then return nil end
+    return string.match(soundIdUrl, "(%d+)$")
+end
+
+local function isInLobby(obj)
+    if not obj then return false end
+    local current = obj
+    while current and current ~= Workspace do
+        local name = string.lower(current.Name)
+        if string.find(name, "lobby") or string.find(name, "waiting") or string.find(name, "menu") or string.find(name, "room") then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+local Stats = game:GetService("Stats")
+local cachedNetworkEvent = nil
+
+local function getPingCompensation()
+    local success, ping = pcall(function()
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+    end)
+    return success and ping or 0.08
+end
+
+local function getCachedNetworkEvent()
+    if cachedNetworkEvent then return cachedNetworkEvent end
+    pcall(function()
+        local networkFolder = ReplicatedStorage:FindFirstChild("Modules")
+            and ReplicatedStorage.Modules:FindFirstChild("Network")
+            and ReplicatedStorage.Modules.Network:FindFirstChild("Network")
+        if networkFolder then cachedNetworkEvent = networkFolder:FindFirstChild("RemoteEvent") end
+    end)
+    return cachedNetworkEvent
+end
+
+local function getNearestKiller(maxRange)
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local myHRP = character:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+
+    local nearest = nil
+    local nearestDistance = maxRange or Settings.AimbotRange or 40
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local targetChar = player.Character
+            local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+            local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+
+            if targetHRP and humanoid and humanoid.Health > 0 and not isInLobby(targetChar) then
+                local charName = string.lower(targetChar.Name)
+                local playerName = string.lower(player.Name)
+                
+                local isKiller = false
+                if KillerNamesList then
+                    for kName in pairs(KillerNamesList) do
+                        if string.find(charName, kName) or string.find(playerName, kName) then
+                            isKiller = true
+                            break
+                        end
+                    end
+                else
+                    isKiller = true 
+                end
+
+                if isKiller then
+                    local distance = (targetHRP.Position - myHRP.Position).Magnitude
+                    if distance <= nearestDistance then
+                        nearestDistance = distance
+                        nearest = targetHRP
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+-- ==========================================
+-- 👁 ESP System Core Logic
+-- ==========================================
+local trackedESP = {}
+
+local ESPCategories = {
+    ["Killer"] = { ConfigKey = "EspKiller", ColorKey = "EspKillerColor" },
+    ["Survivors"] = { ConfigKey = "EspSurvivors", ColorKey = "EspSurvivorsColor" },
+    ["Generators"] = { ConfigKey = "EspGenerators", ColorKey = "EspGeneratorsColor" },
+    ["Bot"] = { ConfigKey = "EspBot", ColorKey = "EspBotColor" },
+    ["Shadow"] = { ConfigKey = "EspShadow", ColorKey = "EspShadowColor" },
+    ["BloxyCola"] = { ConfigKey = "EspItems", ColorKey = "EspBloxyColor" },
+    ["Medkit"] = { ConfigKey = "EspItems", ColorKey = "EspMedkitColor" },
+    ["DigitalFootprint"] = { ConfigKey = "EspItems", ColorKey = "EspItemsColor" }
+}
+
+local KillerNamesList = {
+    ["azure"] = true, ["nosferatu"] = true, ["sixer"] = true, ["1x1x1x1"] = true,
+    ["noli"] = true, ["johndoe"] = true, ["c00lkidd"] = true, ["slasher"] = true
+}
+
+-- 📌 วางโค้ดเสริมตรงนี้ ----------------------------------
+local SurvivorNamesList = {
+    ["guest 1337"] = true, ["chance"] = true, ["veeronica"] = true, ["dusckkar"] = true,
+    ["taph"] = true, ["two time"] = true, ["007n7"] = true, ["builderman"] = true,
+    ["jane doe"] = true, ["noob"] = true, ["elliot"] = true, ["shedletsky"] = true
+}
+
+local function isFakeGenerator(obj)
+    if not obj then return false end
+    local name = string.lower(obj.Name)
+    return string.find(name, "fake") ~= nil or string.find(name, "decoy") ~= nil
+end
+
+local function isCollectibleItem(obj)
+    if not obj then return false end
+    return obj:IsA("Tool") or obj:IsA("Model") or obj:IsA("BasePart")
+end
+
+local function classifyESPObject(obj)
+    if not obj or not obj.Parent then return nil end
+    if isInLobby(obj) then return nil end
+    if not (obj:IsA("Model") or obj:IsA("Tool") or obj:IsA("BasePart")) then return nil end
+
+    if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then return nil end
+    if obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then return nil end
+    if isFakeGenerator(obj) then return nil end
+
+    local name = string.lower(obj.Name)
+
+    if obj:IsA("BasePart") and name == "shadow" then
+        local parentName = obj.Parent and string.lower(obj.Parent.Name) or ""
+        if string.find(parentName, "shadows", 1, true) then return "Shadow" end
+    end
+
+    if obj:IsA("Model") and (name == "minion" or string.find(name, "minion", 1, true)) then return "Bot" end
+
+    if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
+        local player = Players:GetPlayerFromCharacter(obj)
+
+        for killerName in pairs(KillerNamesList) do
+            if string.find(name, killerName, 1, true) then return "Killer" end
+        end
+        if string.find(name, "killer", 1, true) then return "Killer" end
+
+                        if not player then
+            -- เพิ่มรายชื่อ Minion / Bot ใหม่ (อักษรตัวเล็กทั้งหมดเพราะ name ถูกแปลงเป็น lower แล้ว)
+            local isBot = false
+            local botKeywords = {
+                "bot", "minion", "clone", "summon", "puppet", "decoy", "shadow", 
+                "servant", "helper", "harp", "guitar", "pizzadeliveryrig",
+                "blue", "green", "purple", "red", "mafia", "1x1x1x1zombie", "corrupt"
+            }
+            
+            for _, keyword in ipairs(botKeywords) do
+                if string.find(name, keyword, 1, true) then
+                    isBot = true
+                    break
+                end
+            end
+            
+            if isBot then return "Bot" end
+        end
+
+        if player and player ~= LocalPlayer then return "Survivors" end
+
+        for survivorName in pairs(SurvivorNamesList) do
+            if string.find(name, survivorName, 1, true) then return "Survivors" end
+        end
+        if string.find(name, "survivor", 1, true) then return "Survivors" end
+
+        return nil
+    end
+
+    if string.find(name, "generator", 1, true) then
+        if isFakeGenerator(obj) then return nil end
+        return "Generators"
+    end
+
+    if name == "bloxycola" or name == "bloxy cola" then
+        if isCollectibleItem(obj) then return "BloxyCola" end
+        return nil
+    end
+
+    if name == "medkit" or name == "med kit" then
+        if isCollectibleItem(obj) then return "Medkit" end
+        return nil
+    end
+
+    if name == "digital footprint" or name == "digitalfootprint" then
+        return "DigitalFootprint"
+    end
+
+    return nil
+end
+
+local function getGeneratorProgressNumeric(genObj)
+    if not genObj then return 0 end
+    local currentVal = 0
+
+    for _, attrName in ipairs({"Progress", "Percent", "State", "Completed", "Repair"}) do
+        local attr = genObj:GetAttribute(attrName)
+        if type(attr) == "number" then
+            currentVal = attr
+            break
+        end
+    end
+
+    if currentVal == 0 then
+        local valObj = genObj:FindFirstChild("Progress", true) or genObj:FindFirstChild("Value", true) or genObj:FindFirstChild("Percent", true)
+        if valObj and (valObj:IsA("NumberValue") or valObj:IsA("IntValue")) then
+            currentVal = valObj.Value
+        end
+    end
+
+    return currentVal
+end
+
+local function updateSingleESP(obj, catKey)
+    if not obj or not obj.Parent or isInLobby(obj) or isFakeGenerator(obj) then return end
+    local info = ESPCategories[catKey]
+    if not info then return end
+
+    local isEnabled = Settings[info.ConfigKey]
+    local color = Settings[info.ColorKey]
+
+            if catKey == "Generators" then
+        local progress = getGeneratorProgressNumeric(obj)
+        
+        -- คำนวณเปอร์เซ็นต์ (รองรับทั้งค่า Progress 0-100 และแบบ State 0-5)
+        local percent = (progress <= 5 and progress > 0) and (progress / 5) or (progress / 100)
+        
+        -- เปลี่ยนสีตามช่วงเปอร์เซ็นต์ ทีละ 20%
+        if percent >= 1 or progress == 100 then
+            color = Color3.fromRGB(0, 255, 0)       -- 100% (สีเขียวสว่าง - เสร็จสิ้น)
+        elseif percent >= 0.8 then
+            color = Color3.fromRGB(150, 255, 0)     -- 80% (สีเขียวอมเหลือง)
+        elseif percent >= 0.6 then
+            color = Color3.fromRGB(255, 255, 0)     -- 60% (สีเหลือง)
+        elseif percent >= 0.4 then
+            color = Color3.fromRGB(255, 170, 0)     -- 40% (สีส้ม)
+        elseif percent >= 0.2 then
+            color = Color3.fromRGB(255, 85, 0)      -- 20% (สีส้มแดง)
+        else
+            color = Color3.fromRGB(255, 0, 0)       -- 0% - 19% (สีแดง)
+        end
+    end
+
+    local highlight = obj:FindFirstChild("DuckHighlight")
+    if isEnabled then
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "DuckHighlight"
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.Parent = obj
+        end
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.Enabled = true
+    else
+        if highlight then highlight.Enabled = false end
+    end
+end
+
+local function refreshAllESP()
+    for obj, catKey in pairs(trackedESP) do
+        if isFakeGenerator(obj) then
+            if obj and obj:FindFirstChild("DuckHighlight") then obj.DuckHighlight:Destroy() end
+            trackedESP[obj] = nil
+        else
+            local isSelf = false
+            if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then isSelf = true end
+            if obj and obj:IsA("Model") and Players:GetPlayerFromCharacter(obj) == LocalPlayer then isSelf = true end
+
+            local isDead = false
+            if catKey == "Survivors" or catKey == "Killer" or catKey == "Bot" then
+                local hum = obj:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health <= 0 then isDead = true end
+            end
+
+            if obj and obj.Parent and not isInLobby(obj) and not isSelf and not isDead then
+                updateSingleESP(obj, catKey)
+            else
+                if obj and obj:FindFirstChild("DuckHighlight") then obj.DuckHighlight:Destroy() end
+                if isDead or not obj or not obj.Parent then trackedESP[obj] = nil end
+            end
+        end
+    end
+end
+
+local function registerESPObject(obj)
+    if not obj or not obj.Parent then return end
+    if isInLobby(obj) or isFakeGenerator(obj) then return end
+
+    local catKey = classifyESPObject(obj)
+    if not catKey then return end
+
+    local currentParent = obj.Parent
+    local isNested = false
+    while currentParent and currentParent ~= Workspace do
+        if isFakeGenerator(currentParent) then return end
+        if trackedESP[currentParent] then 
+            isNested = true
+            break 
+        end
+        currentParent = currentParent.Parent
+    end
+
+    if not isNested or catKey == "Bot" or catKey == "Shadow" then
+        trackedESP[obj] = catKey
+        updateSingleESP(obj, catKey)
+    end
+end
+
+-- สแกนวัตถุ ESP ทั้งหมดใน Workspace
+task.spawn(function()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        registerESPObject(obj)
+    end
+    Workspace.DescendantAdded:Connect(function(obj)
+        task.wait(0.1)
+        registerESPObject(obj)
+    end)
+    
+    -- อัปเดตสถานะ ESP ตลอดเวลา
+    while task.wait(0.5) do
+        refreshAllESP()
+    end
+end)
+
+-- นำมาวางต่อจากบล็อก ESP สแกน Workspace ให้ถูกต้อง
+local function forceRegisterPlayerESP(player)
+    if player.Character then
+        task.spawn(function()
+            task.wait(0.5) -- หน่วงรอให้โมเดลโหลดครบ
+            registerESPObject(player.Character)
+        end)
+    end
+    player.CharacterAdded:Connect(function(char)
+        task.spawn(function()
+            task.wait(0.5)
+            registerESPObject(char)
+        end)
+    end)
+end
+
+-- สแกนผู้เล่นที่อยู่ในเซิร์ฟเวอร์อยู่แล้ว
+for _, player in ipairs(Players:GetPlayers()) do
+    forceRegisterPlayerESP(player)
+end
+
+-- สแกนผู้เล่นที่เพิ่งเข้ามาใหม่
+Players.PlayerAdded:Connect(function(player)
+    forceRegisterPlayerESP(player)
+end)
+
+-- ==========================================
+-- Aimbot & Combat Core Logic
+-- ==========================================
+local hookedAimbotButtons = {}
+local activeAimbotLoop = nil
+
+local KillerSkillButtons = {
+    ["Perforating"] = true, ["Lacerate"] = true, ["Carving Slash"] = true,
+    ["Stab"] = true, ["Slash"] = true, ["Punch"] = true
+}
+
+local SurvivorSkillButtons = {
+    ["Slash"] = true, ["Hatchet"] = true, ["Punch"] = true, ["One Shot"] = true
+}
+
+local function getNearestTarget(targetCategory, maxRange)
+    local character = LocalPlayer.Character
+    if not character then return nil end
+
+    local myHRP = character:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+
+    local nearest = nil
+
+    if targetCategory == "Killer" and getNearestKiller then
+        nearest = getNearestKiller(maxRange)
+    end
+
+    return nearest
+end
+
+local function startAimbot(target, duration)
+    if not target or not target.Parent then return end
+
+    if activeAimbotLoop then
+        activeAimbotLoop:Disconnect()
+        activeAimbotLoop = nil
+    end
+
+    local startTime = os.clock()
+    local lockDuration = duration or Settings.AimbotDuration or 1
+    local aimSpeed = Settings.AimbotSpeed or 1
+    local prediction = Settings.AimbotPrediction or 0.4
+
+    local lastLookVector = target.CFrame.LookVector
+
+    activeAimbotLoop = RunService.RenderStepped:Connect(function()
+        if os.clock() - startTime >= lockDuration or not target or not target.Parent or not LocalPlayer.Character then
+            if activeAimbotLoop then
+                activeAimbotLoop:Disconnect()
+                activeAimbotLoop = nil
+            end
+            return
+        end
+
+        local HRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local camera = Workspace.CurrentCamera
+        if not HRP or not camera then return end
+
+        local myPos = HRP.Position
+        local targetPos = target.Position
+        local dist = (targetPos - myPos).Magnitude
+
+        local currentLook = target.CFrame.LookVector
+        local predictedPosition = targetPos
+
+        -- เงื่อนไข: ถ้าห่างเกิน 10 studs ให้เริ่มคำนวณการดักหน้า
+        if dist > 10 then
+            local targetVel = target.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
+            local flatVel = Vector3.new(targetVel.X, 0, targetVel.Z)
+            
+            local flatLook = Vector3.new(currentLook.X, 0, currentLook.Z).Unit
+            local toPlayerDir = (myPos - targetPos).Unit
+            local moveDir = (flatVel.Magnitude > 1.5) and flatVel.Unit or flatLook
+
+            -- ตรวจสอบว่า Killer วิ่งตรงเข้าหาผู้เล่นหรือไม่ (วิ่งเข้าหาตรงๆ = ไม่ดักหน้า)
+            local isApproachingStraight = moveDir:Dot(toPlayerDir) > 0.82
+
+            -- ตรวจสอบการหมุนลำตัว/เลี้ยว (ปรับความไว Dot Product + ตรวจความเร็วการหมุนเชิงมุม Y)
+            local turnDot = lastLookVector:Dot(currentLook)
+            local angularVelY = math.abs(target.AssemblyAngularVelocity.Y)
+            local isTurning = (turnDot < 0.9995) or (angularVelY > 0.3)
+
+            -- ถ้าไม่ได้วิ่งเข้าหาตรงๆ ให้ทำการล็อคล่วงหน้า
+            if not isApproachingStraight then
+                if isTurning then
+                    -- ทันทีที่ลำตัวหมุน/เลี้ยว ให้พุ่งจุดล็อคไปทางทิศที่หันไปทันที
+                    local turnPredict = flatLook * (prediction * 14)
+                    local velPredict = flatVel * prediction
+                    predictedPosition = targetPos + turnPredict + velPredict
+                elseif flatVel.Magnitude > 2 then
+                    -- วิ่งฉีกข้างปกติโดยไม่เลี้ยว
+                    predictedPosition = targetPos + (flatVel * prediction)
+                end
+            end
+        end
+
+        -- อัปเดต lastLookVector นอกเงื่อนไขเพื่อให้เก็บค่าความเคลื่อนไหวทุกเฟรม
+        lastLookVector = currentLook
+
+        -- ปรับหมุนกล้องและหันหน้าตัวละคร
+        local targetCameraCFrame = CFrame.new(camera.CFrame.Position, predictedPosition)
+        camera.CFrame = camera.CFrame:Lerp(targetCameraCFrame, aimSpeed)
+
+        local targetHRPCFrame = CFrame.new(HRP.Position, Vector3.new(predictedPosition.X, HRP.Position.Y, predictedPosition.Z))
+        HRP.CFrame = HRP.CFrame:Lerp(targetHRPCFrame, aimSpeed)
+    end)
+end
+
+-- ==========================================
+-- ⚡ Zero-Delay Remote Auto Block 
+-- ==========================================
+local blockRemote = nil
+task.spawn(function()
+    local modules = ReplicatedStorage:WaitForChild("Modules", 5)
+    local network1 = modules and modules:WaitForChild("Network", 5)
+    local network2 = network1 and network1:WaitForChild("Network", 5)
+    blockRemote = network2 and network2:WaitForChild("RemoteEvent", 5)
+end)
+
+local lastBlockTime = 0
+
+local function performBlock()
+    if not Settings.MasterAutoBlock or not blockRemote or not cachedBlockBuffer then return end
+    
+    -- ลบ task.delay ออก ใช้ os.clock() เช็กเวลาแทนเพื่อลดดีเลย์ให้เหลือ 0
+    local now = os.clock()
+    if now - lastBlockTime < 0.01 then return end -- หน่วงแค่ 0.01 วิ ป้องกันคำสั่งชนกันจนเซิร์ฟเวอร์เตะ
+    lastBlockTime = now
+
+    blockRemote:FireServer("UseActorAbility", { cachedBlockBuffer })
+end
+
+-- ==========================================
+-- Skill Buttons Hook
+-- ==========================================
+local function setupAimbotButton(button)
+    if hookedAimbotButtons[button] then return end
+    hookedAimbotButtons[button] = true
+
+    local function triggerAimbot()
+        if not Settings.AimbotEnabled then return end
+        
+        if button.Name == "Punch" then
+            local target = getNearestKiller(Settings.AimbotRange or 40)
+            if target then 
+                startAimbot(target, Settings.AimbotDuration or 1) 
+            end
+            return
+        end
+
+        if not SurvivorSkillButtons[button.Name] and not KillerSkillButtons[button.Name] then return end
+
+        local target = getNearestKiller(Settings.AimbotRange or 40)
+        if target then 
+            startAimbot(target, Settings.AimbotDuration or 1) 
+        end
+    end
+
+    if button.Activated then
+        button.Activated:Connect(triggerAimbot)
+    end
+    button.MouseButton1Click:Connect(triggerAimbot)
+end
+
+local function scanForSkillButtons()
+    local pGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not pGui then return end
+
+    local function checkAndHook(gui)
+        if gui:IsA("GuiButton") and (gui.Name == "Punch" or SurvivorSkillButtons[gui.Name] or KillerSkillButtons[gui.Name]) then
+            setupAimbotButton(gui)
+        end
+    end
+
+    for _, gui in ipairs(pGui:GetDescendants()) do checkAndHook(gui) end
+    pGui.DescendantAdded:Connect(checkAndHook)
+end
+task.spawn(scanForSkillButtons)
+
+-- ==========================================
+-- Behead Skill Detector
+-- ==========================================
+local currentlyBeheading = {}
+local activeHitboxes = {}
+local hitboxConnections = {}
+
+local function getAnimId(animIdStr)
+    return animIdStr and string.match(tostring(animIdStr), "%d+")
+end
+
+local function killHitboxImmediately(character)
+    if activeHitboxes[character] then
+        activeHitboxes[character]:Destroy()
+        activeHitboxes[character] = nil
+    end
+    if hitboxConnections[character] then
+        hitboxConnections[character]:Disconnect()
+        hitboxConnections[character] = nil
+    end
+end
+
+local function isBeheadSkill(character)
+    if not Settings.IgnoreBehead or not character then return false end
+    
+    -- 1. เช็คสถานะอนิเมชั่นที่กำลังเล่นอยู่ (แม่นยำที่สุด)
+    if currentlyBeheading[character] then return true end
+    
+    -- 2. เช็ค Ability Object แบบเจาะจง
+    if character:FindFirstChild("BeheadAbility") then return true end
+    
+    -- 3. เช็คชื่อ Part อย่างระมัดระวัง (ป้องกันการทับซ้อนกับชื่อธรรมดา)
+    for _, child in ipairs(character:GetChildren()) do
+        local childName = string.lower(child.Name)
+        if childName == "behead" or string.find(childName, "behead_") then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function hookCharacterAnimations(character)
+    if not character then return end
+    local humanoid = character:WaitForChild("Humanoid", 3)
+    local animator = humanoid and humanoid:WaitForChild("Animator", 3)
+    
+    if animator then
+        animator.AnimationPlayed:Connect(function(track)
+            if not Settings.IgnoreBehead then return end
+            if track.Animation then
+                local playId = getAnimId(track.Animation.AnimationId)
+                if playId and BeheadIDs and BeheadIDs[playId] then
+                    -- ล็อคสถานะว่ากำลัง Behead
+                    currentlyBeheading[character] = true
+                    
+                    -- บังคับทำลาย Hitbox ที่อาจจะค้างอยู่ทันที
+                    killHitboxImmediately(character)
+                    
+                    -- หน่วงเวลาปลดล็อคตามความยาวอนิเมชั่น (หรือเผื่อไว้ 2.5 วิ)
+                    task.delay(track.Length > 0 and track.Length or 2.5, function()
+                        currentlyBeheading[character] = nil
+                    end)
+                end
+            end
+        end)
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player.Character then task.spawn(function() hookCharacterAnimations(player.Character) end) end
+    player.CharacterAdded:Connect(function(char) task.spawn(function() hookCharacterAnimations(char) end) end)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(char) task.spawn(function() hookCharacterAnimations(char) end) end)
+end)
+
+-- ==========================================
+-- ⚡ Hitbox Object Pool
+-- ==========================================
+local HitboxPool = {}
+local function initHitboxPool()
+    for i = 1, 15 do
+        local box = Instance.new("Part")
+        box.Name = "Fast_Predict_Box_" .. i
+        box.Size = Vector3.new(Settings.BoxSizeWidth, Settings.BoxSizeHeight, Settings.BoxSizeDepth)
+        box.Color = Settings.BoxColor
+        box.Transparency = 1
+        box.Material = Settings.GlowMode and Enum.Material.Neon or Enum.Material.SmoothPlastic
+        box.CanCollide, box.CanQuery, box.Massless, box.Anchored = false, false, true, true
+        box.CFrame = CFrame.new(0, 99999, 0)
+        box.Parent = Workspace
+        table.insert(HitboxPool, {Part = box, InUse = false})
+    end
+end
+task.spawn(initHitboxPool)
+
+local function getHitboxFromPool()
+    for _, data in ipairs(HitboxPool) do
+        if not data.InUse then
+            data.InUse = true
+            data.Part.Color = Settings.BoxColor
+            return data
+        end
+    end
+    return nil 
+end
+
+local function releaseHitbox(boxData)
+    if boxData and boxData.Part then
+        boxData.InUse = false
+        boxData.Part.Transparency = 1
+        boxData.Part.CFrame = CFrame.new(0, 99999, 0)
+    end
+end
+
+-- ==========================================
+-- ⚡ Pre-Simulation Hitbox Loop (ทำงานไวกว่า RenderStepped)
+-- ==========================================
+local overlapParams = OverlapParams.new()
+overlapParams.FilterType = Enum.RaycastFilterType.Include
+
+local function spawnHitboxAndCheck(character, customConfig)
+    -- ดักก่อนสร้างกล่อง: ถ้าอยู่หน้าล็อบบี้ หรือกำลัง Behead หรือมีกล่องอยู่แล้ว ห้ามสร้างเด็ดขาด
+    if isInLobby(character) or isBeheadSkill(character) or hitboxConnections[character] then return end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local activeVisibleTime = (customConfig and customConfig.visibleTime) or Settings.VisibleTime
+    local boxSize = Vector3.new(Settings.BoxSizeWidth, Settings.BoxSizeHeight, Settings.BoxSizeDepth)
+    local forwardOffset = - (Settings.BoxSizeDepth / 2) - Settings.HitboxDistance
+    
+    local boxData = getHitboxFromPool()
+    if not boxData then return end
+    local box = boxData.Part
+    activeHitboxes[character] = boxData
+    box.Size = boxSize
+
+    local startTime = os.clock()
+    local hasTriggeredBlock = false
+
+    hitboxConnections[character] = RunService.Stepped:Connect(function()
+        local timeAlive = os.clock() - startTime
+        
+        -- ดักระหว่างแสดงกล่อง: ถ้าหมดเวลา หรือ จู่ๆ ศัตรูกดใช้ Behead ให้ทำลาย Hitbox ทิ้งทันที!
+        if timeAlive > activeVisibleTime or currentlyBeheading[character] or isBeheadSkill(character) then
+            releaseHitbox(boxData)
+            activeHitboxes[character] = nil
+            hitboxConnections[character]:Disconnect()
+            hitboxConnections[character] = nil
+            return
+        end
+        
+        if hrp then 
+            box.CFrame = hrp.CFrame * CFrame.new(0, 0, forwardOffset)
+        end
+        
+        box.Transparency = Settings.HitboxEnabled and Settings.BoxTransparency or 1
+        
+        if character ~= LocalPlayer.Character and Settings.MasterAutoBlock and not hasTriggeredBlock then
+            local currentMyChar = LocalPlayer.Character
+            if currentMyChar then
+                overlapParams.FilterDescendantsInstances = {currentMyChar}
+                
+                local partsInBox = Workspace:GetPartBoundsInBox(box.CFrame, boxSize, overlapParams)
+                if #partsInBox > 0 then
+                    hasTriggeredBlock = true
+                    box.Color = Color3.fromRGB(255, 0, 0)
+                    performBlock()
+                end
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- ⚡ Zero-Delay Math Injection Check (Updated Filter)
+-- ==========================================
+local hookedSounds = {}
+local soundDataCache = setmetatable({}, { __mode = "k" })
+
+-- รายชื่อคีย์เวิร์ดที่ไม่ต้องการให้ AutoBlock ตรวจจับเสียง
+local IgnoredKeywords = {
+    "behead",
+    "pizza delivery",
+    "pizza delivery bot",
+    "bot",
+    "corrupt nature",
+    "corruptnature",
+    "minion"
+}
+
+-- ฟังก์ชันเช็คว่า Sound หรือ Model ต้นทางมาจากสิ่งที่ยกเว้นไว้หรือไม่
+local function isIgnoredSoundSource(sound)
+    if not sound then return true end
+    
+    -- 1. เช็คที่ชื่อ Sound โดยตรง
+    local soundName = string.lower(sound.Name)
+    for _, keyword in ipairs(IgnoredKeywords) do
+        if string.find(soundName, keyword) then
+            return true
+        end
+    end
+    
+    -- 2. เช็คชื่อ Parent / Model / Folder ย้อนขึ้นไปจนถึง Workspace
+    local current = sound.Parent
+    while current and current ~= Workspace do
+        local currentName = string.lower(current.Name)
+        for _, keyword in ipairs(IgnoredKeywords) do
+            if string.find(currentName, keyword) then
+                return true
+            end
+        end
+        current = current.Parent
+    end
+    
+    return false
+end
+
+local function setupSound(sound)
+    if not sound:IsA("Sound") or hookedSounds[sound] then return end
+    hookedSounds[sound] = true
+    
+    local function refreshSoundCache()
+        local rawId = sound.SoundId
+        if not rawId or rawId == "" then soundDataCache[sound] = nil return end
+        local numId = string.match(rawId, "%d+$")
+        if not numId then soundDataCache[sound] = nil return end
+        
+        -- ถ้ามาจาก Behead, Bot, Pizza Delivery หรือ Corrupt Nature ให้ข้ามทันที
+        if isIgnoredSoundSource(sound) then
+            soundDataCache[sound] = nil
+            return
+        end
+
+        local isBehead = BeheadIDs and BeheadIDs[numId] == true
+        local isKiller = KillerSounds and KillerSounds[numId] == true
+        
+        if not isKiller or isBehead then soundDataCache[sound] = nil return end
+
+        soundDataCache[sound] = {
+            numId = numId,
+            character = sound:FindFirstAncestorOfClass("Model"),
+            customConfig = SoundCustomConfig and SoundCustomConfig[numId],
+            lastTriggerTime = 0
+        }
+    end
+
+    refreshSoundCache()
+    sound:GetPropertyChangedSignal("SoundId"):Connect(refreshSoundCache)
+    sound:GetPropertyChangedSignal("Parent"):Connect(refreshSoundCache)
+    
+    local function onSoundTriggered()
+        if not Settings.AutoBlockSound then return end
+        
+        -- เช็คซ้ำกรณี Sound เพิ่งย้ายไปอยู่ใต้ Bot หรือวัตถุยกเว้นตอนปล่อยสกิล
+        if isIgnoredSoundSource(sound) then return end
+
+        local cache = soundDataCache[sound]
+        if not cache then return end
+
+        local currentTime = os.clock()
+        if currentTime - cache.lastTriggerTime < 0.05 then return end
+        cache.lastTriggerTime = currentTime
+
+        local character = cache.character or sound:FindFirstAncestorOfClass("Model")
+        if not character or isBeheadSkill(character) then return end
+        if not cache.character then cache.character = character end
+
+        -- ZERO DELAY MATH CHECK: บล็อกทันทีด้วยสมการ โดยไม่ต้องรอ Hitbox เกิด
+        if character ~= LocalPlayer.Character and Settings.MasterAutoBlock then
+            local myChar = LocalPlayer.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+
+            if myHRP and hrp then
+                -- 1. เช็กรัศมีคร่าวๆ เพื่อความไวสูงสุด
+                local maxReach = Settings.BoxSizeDepth + Settings.HitboxDistance + 3
+                local diff = myHRP.Position - hrp.Position
+                local distSq = (diff.X * diff.X) + (diff.Y * diff.Y) + (diff.Z * diff.Z)
+                
+                if distSq <= (maxReach * maxReach) then
+                    -- 2. จำลองกล่องจำลองเสมือนจริงด้วยคณิตศาสตร์ CFrame ทันที (0ms delay)
+                    local forwardOffset = - (Settings.BoxSizeDepth / 2) - Settings.HitboxDistance
+                    local boxCenter = hrp.CFrame * CFrame.new(0, 0, forwardOffset)
+                    
+                    -- แปลงพิกัดตัวเราเข้าไปอยู่ในมุมมองของกล่องฆาตกร
+                    local localPos = boxCenter:ToObjectSpace(myHRP.CFrame).Position
+                    
+                    local halfW = Settings.BoxSizeWidth / 2
+                    local halfH = Settings.BoxSizeHeight / 2
+                    local halfD = Settings.BoxSizeDepth / 2
+                    
+                    -- ตรวจสอบว่าจุดศูนย์กลางตัวเราอยู่ในกล่องนี้หรือไม่
+                    if math.abs(localPos.X) <= halfW and math.abs(localPos.Y) <= halfH and math.abs(localPos.Z) <= halfD then
+                        performBlock() -- สั่งบล็อกทันทีก่อนกล่องภาพจะเกิด
+                    end
+                end
+            end
+        end
+
+        -- สั่งสร้าง Hitbox ภาพตามปกติ เพื่อรองรับคนเดินชนทีหลัง
+        spawnHitboxAndCheck(character, cache.customConfig)
+    end
+
+    sound.Played:Connect(onSoundTriggered)
+    sound:GetPropertyChangedSignal("Playing"):Connect(function() 
+        if sound.IsPlaying then onSoundTriggered() end 
+    end)
+    
+    if sound.IsPlaying then onSoundTriggered() end
+end
+
+local function initSoundDetection()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Sound") then setupSound(obj) end
+    end
+    Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Sound") then setupSound(obj) end
+    end)
+end
+
+initSoundDetection()
+
+-- ==========================================
+-- Stamina System
+-- ==========================================
+local SprintingModule = nil
+local originalStaminaValues = {}
+
+local function getMyRole()
+    local character = LocalPlayer.Character
+    if not character then return "Survivor" end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid:FindFirstChild("BodyColors") then
+        return "Survivor" 
+    end
+    
+    local charName = string.lower(character.Name)
+    if KillerNamesList then
+        for kName in pairs(KillerNamesList) do
+            if string.find(charName, kName) then
+                return "Killer"
+            end
+        end
+    end
+    return "Survivor"
+end
+
+task.spawn(function()
+    task.wait(2)  
+    while not SprintingModule do
+        pcall(function()
+            SprintingModule = require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+        end)
+        task.wait(1)
+    end
+    
+    if SprintingModule then
+        originalStaminaValues.MaxStamina = SprintingModule.MaxStamina
+        originalStaminaValues.StaminaGain = SprintingModule.StaminaGain
+        originalStaminaValues.StaminaLoss = SprintingModule.StaminaLoss
+        originalStaminaValues.SprintSpeed = SprintingModule.SprintSpeed
+    end
+end)
+
+task.spawn(function()
+    task.wait(3)
+    while task.wait(0.1) do
+        if SprintingModule then
+            local role = getMyRole()
+            local prefix = (role == "Survivor") and "Surv" or "Killer"
+            
+            if Settings[prefix .. "InfStamina"] then
+                SprintingModule.Stamina = SprintingModule.MaxStamina
+            end
+            
+            if Settings[prefix .. "EnableMaxStamina"] and Settings[prefix .. "MaxStamina"] ~= nil then
+                SprintingModule.MaxStamina = Settings[prefix .. "MaxStamina"]
+            elseif not Settings[prefix .. "EnableMaxStamina"] and originalStaminaValues.MaxStamina ~= nil then
+                SprintingModule.MaxStamina = originalStaminaValues.MaxStamina
+            end
+            
+            if Settings[prefix .. "EnableStaminaGain"] and Settings[prefix .. "StaminaGain"] ~= nil then
+                SprintingModule.StaminaGain = Settings[prefix .. "StaminaGain"]
+            elseif not Settings[prefix .. "EnableStaminaGain"] and originalStaminaValues.StaminaGain ~= nil then
+                SprintingModule.StaminaGain = originalStaminaValues.StaminaGain
+            end
+            
+            if Settings[prefix .. "EnableStaminaLoss"] and Settings[prefix .. "StaminaLoss"] ~= nil then
+                SprintingModule.StaminaLoss = Settings[prefix .. "StaminaLoss"]
+            elseif not Settings[prefix .. "EnableStaminaLoss"] and originalStaminaValues.StaminaLoss ~= nil then
+                SprintingModule.StaminaLoss = originalStaminaValues.StaminaLoss
+            end
+            
+            if Settings[prefix .. "EnableSprintSpeed"] and Settings[prefix .. "SprintSpeed"] ~= nil then
+                SprintingModule.SprintSpeed = Settings[prefix .. "SprintSpeed"]
+            elseif not Settings[prefix .. "EnableSprintSpeed"] and originalStaminaValues.SprintSpeed ~= nil then
+                SprintingModule.SprintSpeed = originalStaminaValues.SprintSpeed
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- FlowGame Auto Gen Module
+-- ==========================================
+local FlowGameModule, oldNew, hookedGen = nil, nil, false
+
+local function isNeighbour(r1, c1, r2, c2)
+    return (r2 == r1-1 and c2 == c1) or (r2 == r1+1 and c2 == c1) or (r2 == r1 and c2 == c1-1) or (r2 == r1 and c2 == c1+1)
+end
+
+local function key(n) return n.row .. "-" .. n.col end
+
+local function orderPath(path, endpoints)
+    if not path or #path == 0 then return path end
+    local start = endpoints and endpoints[1] or path[1]
+    local pool = {}
+    for _, n in ipairs(path) do pool[key(n)] = {row = n.row, col = n.col} end
+    local ordered = {}
+    local cur = {row = start.row, col = start.col}
+    table.insert(ordered, cur)
+    pool[key(cur)] = nil
+    while next(pool) do
+        local found = false
+        for k, n in pairs(pool) do
+            if isNeighbour(cur.row, cur.col, n.row, n.col) then
+                table.insert(ordered, n)
+                pool[k] = nil
+                cur = n
+                found = true
+                break
+            end
+        end
+        if not found then 
+            break 
+        end
+    end
+    return ordered
+end
+
+local HintSystem = {}
+function HintSystem:Draw(puzzle)
+    if not puzzle or not puzzle.Solution then return end
+    for i = 1, #puzzle.Solution do
+        local path = puzzle.Solution[i]
+        local ends = puzzle.targetPairs[i]
+        local ordered = orderPath(path, ends)
+        puzzle.paths[i] = {}
+        for _, node in ipairs(ordered) do
+            if not Settings.AutoGenEnabled then return end
+            table.insert(puzzle.paths[i], {row = node.row, col = node.col})
+            puzzle:updateGui()
+            task.wait(Settings.AutoGenSpeed)
+        end
+        puzzle:checkForWin()
+    end
+end
+
+local function hookAutoGen()
+    if hookedGen then return end
+    local success, mod = pcall(function()
+        return ReplicatedStorage.Modules.Minigames.FlowGameManager.FlowGame
+    end)
+    if success and mod then
+        FlowGameModule = require(mod)
+        oldNew = oldNew or FlowGameModule.new
+        FlowGameModule.new = function(...)
+            local puzzle = oldNew(...)
+            task.spawn(function()
+                if Settings.AutoGenEnabled then HintSystem:Draw(puzzle) end
+            end)
+            return puzzle
+        end
+        hookedGen = true
+    end
+end
+
+hookAutoGen()
+
+local function setupPuzzleUIHider()
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    PlayerGui.ChildAdded:Connect(function(child)
+        if child.Name == "PuzzleUI" then
+            task.wait(0.1)
+            if Settings.HidePuzzleUI then child.Enabled = false end
+            child:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if Settings.HidePuzzleUI and child.Enabled then child.Enabled = false end
+            end)
+        end
+    end)
+    local existingUI = PlayerGui:FindFirstChild("PuzzleUI")
+    if existingUI then
+        if Settings.HidePuzzleUI then existingUI.Enabled = false end
+        existingUI:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if Settings.HidePuzzleUI and existingUI.Enabled then existingUI.Enabled = false end
+        end)
+    end
+end
+
+task.spawn(setupPuzzleUIHider)
+
+-- ==========================================
+-- UI & Configuration Storage System
+-- ==========================================
+local CONFIG_FILE = "DuckHub_Config.json"
+
+local function saveConfigFile(data)
+    if writefile then
+        pcall(function()
+            writefile(CONFIG_FILE, HttpService:JSONEncode(data))
+        end)
+    end
+end
+
+local function loadConfigFile()
+    if readfile and isfile and isfile(CONFIG_FILE) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(CONFIG_FILE))
+        end)
+        if success and type(result) == "table" then
+            return result
+        end
+    end
+    return {}
+end
+
+local ConfigsStorage = loadConfigFile()
+
+local function GetParentGui()
+    if gethui then return gethui() end
+    local success = pcall(function()
+        local test = Instance.new("Folder")
+        test.Parent = CoreGui
+        test:Destroy()
+    end)
+    return success and CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local parentGui = GetParentGui()
+if parentGui:FindFirstChild("DuckHubLight") then parentGui.DuckHubLight:Destroy() end
+if parentGui:FindFirstChild("DuckHubToggleBtn") then parentGui.DuckHubToggleBtn:Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DuckHubLight"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = parentGui
+
+local UILanguageRegistry = {}
+
+local QuickBtn = Instance.new("TextButton")
+
+local function ApplyLanguage()
+    for _, entry in ipairs(UILanguageRegistry) do
+        if entry.Type == "Tab" then
+            entry.Obj.Text = entry.Texts[Settings.Language]
+        elseif entry.Type == "Toggle" then
+            local statusText = entry.GetValue() and "ON" or "OFF"
+            entry.Obj.Text = "   " .. entry.Texts[Settings.Language] .. " : " .. statusText
+            entry.Obj.BackgroundColor3 = entry.GetValue() and Color3.fromRGB(40, 140, 60) or Color3.fromRGB(40, 40, 40)
+        elseif entry.Type == "Input" then
+            entry.Obj.Text = entry.Texts[Settings.Language]
+            if entry.BoxObj and entry.GetSettingVal then
+                entry.BoxObj.Text = tostring(entry.GetSettingVal())
+            end
+        elseif entry.Type == "QuickBtn" then
+            local statusText = entry.GetValue() and "ON" or "OFF"
+            entry.Obj.Text = entry.Texts[Settings.Language] .. ": " .. statusText
+            QuickBtn.BackgroundColor3 = Settings.MasterAutoBlock and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(180, 40, 40)
+        elseif entry.Type == "Header" then
+            entry.Obj.Text = entry.Texts[Settings.Language]
+        elseif entry.Type == "Paragraph" then
+            entry.TitleObj.Text = entry.Titles[Settings.Language]
+            entry.ContentObj.Text = entry.Contents[Settings.Language]
+        end
+    end
+end
+
+QuickBtn.Size = UDim2.new(0, 150, 0, 40)
+QuickBtn.Position = UDim2.new(0.5, -75, 0, 15)
+QuickBtn.BackgroundColor3 = Settings.MasterAutoBlock and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(180, 40, 40)
+QuickBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+QuickBtn.Font = Enum.Font.GothamBold
+QuickBtn.TextSize = 13
+QuickBtn.Visible = Settings.ShowQuickUI
+QuickBtn.Active = true
+QuickBtn.Draggable = true 
+QuickBtn.Parent = ScreenGui
+Instance.new("UICorner", QuickBtn).CornerRadius = UDim.new(0, 8)
+
+table.insert(UILanguageRegistry, {
+    Type = "QuickBtn",
+    Obj = QuickBtn,
+    Texts = { TH = "ออโต้บล็อก", EN = "AutoBlock" },
+    GetValue = function() return Settings.MasterAutoBlock end
+})
+QuickBtn.Text = (Settings.Language == "TH" and "ออโต้บล็อก: " or "AutoBlock: ") .. (Settings.MasterAutoBlock and "ON" or "OFF")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 560, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -280, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundTransparency = 1
+TopBar.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -70, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.Text = "Auto Block Duck Hub 🦆"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -65, 0, 5)
+MinimizeBtn.Text = "-"
+MinimizeBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 20
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Parent = TopBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0, 5)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Parent = TopBar
+
+local Sidebar = Instance.new("ScrollingFrame")
+Sidebar.Size = UDim2.new(0, 150, 1, -40)
+Sidebar.Position = UDim2.new(0, 0, 0, 40)
+Sidebar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Sidebar.BorderSizePixel = 0
+Sidebar.ScrollBarThickness = 3 -- แถบเลื่อนแบบบาง
+Sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
+Sidebar.Parent = MainFrame
+
+local SidebarList = Instance.new("UIListLayout")
+SidebarList.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarList.Padding = UDim.new(0, 5)
+SidebarList.Parent = Sidebar
+Instance.new("UIPadding", Sidebar).PaddingTop = UDim.new(0, 10)
+
+-- คำนวณความสูงของเมนูอัตโนมัติ เพื่อให้แถบเลื่อนครอบคลุมทุกปุ่มพอดี
+SidebarList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, SidebarList.AbsoluteContentSize.Y + 20)
+end)
+
+local ContentArea = Instance.new("Frame")
+ContentArea.Size = UDim2.new(1, -150, 1, -40)
+ContentArea.Position = UDim2.new(0, 150, 0, 40)
+ContentArea.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ContentArea.BorderSizePixel = 0
+ContentArea.ClipsDescendants = true
+ContentArea.Parent = MainFrame
+
+local Tabs = {}
+local function CreateTab(texts)
+    local TabBtn = Instance.new("TextButton")
+    TabBtn.Size = UDim2.new(1, 0, 0, 35)
+    TabBtn.BackgroundTransparency = 1
+    TabBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    TabBtn.Text = texts[Settings.Language]
+    TabBtn.TextColor3 = Color3.fromRGB(170, 170, 170)
+    TabBtn.Font = Enum.Font.Gotham
+    TabBtn.TextSize = 13
+    TabBtn.BorderSizePixel = 0
+    TabBtn.Parent = Sidebar
+
+    table.insert(UILanguageRegistry, { Type = "Tab", Obj = TabBtn, Texts = texts })
+
+    local Indicator = Instance.new("Frame")
+    Indicator.Size = UDim2.new(0, 3, 1, 0)
+    Indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Indicator.BorderSizePixel = 0
+    Indicator.Visible = false
+    Indicator.Parent = TabBtn
+
+    local TabContent = Instance.new("ScrollingFrame")
+    TabContent.Size = UDim2.new(1, -20, 1, -20)
+    TabContent.Position = UDim2.new(0, 10, 0, 10)
+    TabContent.BackgroundTransparency = 1
+    TabContent.BorderSizePixel = 0
+    TabContent.ScrollBarThickness = 4
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabContent.Visible = false
+    TabContent.Parent = ContentArea
+
+    local UIList = Instance.new("UIListLayout")
+    UIList.SortOrder = Enum.SortOrder.LayoutOrder
+    UIList.Padding = UDim.new(0, 8)
+    UIList.Parent = TabContent
+
+    UIList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        TabContent.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 20)
+    end)
+
+    table.insert(Tabs, {Btn = TabBtn, Content = TabContent, Indicator = Indicator})
+
+    TabBtn.MouseButton1Click:Connect(function()
+        for _, t in ipairs(Tabs) do
+            t.Content.Visible = false
+            t.Btn.BackgroundTransparency = 1
+            t.Btn.TextColor3 = Color3.fromRGB(170, 170, 170)
+            t.Indicator.Visible = false
+        end
+        TabContent.Visible = true
+        TabBtn.BackgroundTransparency = 0 
+        TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Indicator.Visible = true
+    end)
+
+    return TabContent
+end
+
+local function createHeader(parentTab, texts)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 24)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    frame.BorderSizePixel = 0
+    frame.Parent = parentTab
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -10, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.Text = texts[Settings.Language]
+    lbl.TextColor3 = Color3.fromRGB(255, 180, 50)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Parent = frame
+
+    table.insert(UILanguageRegistry, { Type = "Header", Obj = lbl, Texts = texts })
+end
+
+local function createParagraph(parentTab, titleTexts, contentTexts)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 0)
+    frame.AutomaticSize = Enum.AutomaticSize.Y
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    frame.BorderSizePixel = 0
+    frame.Parent = parentTab
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 10)
+    pad.PaddingBottom = UDim.new(0, 10)
+    pad.PaddingLeft = UDim.new(0, 10)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.Parent = frame
+
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 6)
+    layout.Parent = frame
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, 0, 0, 20)
+    titleLbl.Text = titleTexts[Settings.Language]
+    titleLbl.TextColor3 = Color3.fromRGB(255, 180, 50)
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 13
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Parent = frame
+
+    local contentLbl = Instance.new("TextLabel")
+    contentLbl.Size = UDim2.new(1, 0, 0, 0)
+    contentLbl.AutomaticSize = Enum.AutomaticSize.Y
+    contentLbl.Text = contentTexts[Settings.Language]
+    contentLbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+    contentLbl.Font = Enum.Font.Gotham
+    contentLbl.TextSize = 12
+    contentLbl.TextXAlignment = Enum.TextXAlignment.Left
+    contentLbl.TextYAlignment = Enum.TextYAlignment.Top
+    contentLbl.TextWrapped = true
+    contentLbl.BackgroundTransparency = 1
+    contentLbl.Parent = frame
+
+    table.insert(UILanguageRegistry, {
+        Type = "Paragraph",
+        TitleObj = titleLbl,
+        ContentObj = contentLbl,
+        Titles = titleTexts,
+        Contents = contentTexts
+    })
+end
+
+local function createToggle(parentTab, texts, settingKey, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = Settings[settingKey] and Color3.fromRGB(40, 140, 60) or Color3.fromRGB(40, 40, 40)
+    btn.Text = "   " .. texts[Settings.Language] .. " : " .. (Settings[settingKey] and "ON" or "OFF")
+    btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = parentTab
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+    table.insert(UILanguageRegistry, { 
+        Type = "Toggle", 
+        Obj = btn, 
+        Texts = texts, 
+        GetValue = function() return Settings[settingKey] end 
+    })
+
+    btn.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        btn.BackgroundColor3 = Settings[settingKey] and Color3.fromRGB(40, 140, 60) or Color3.fromRGB(40, 40, 40)
+        btn.Text = "   " .. texts[Settings.Language] .. " : " .. (Settings[settingKey] and "ON" or "OFF")
+        callback(Settings[settingKey])
+    end)
+end
+
+local function createInput(parentTab, texts, settingKey, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 32)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    frame.Parent = parentTab
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.65, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.Text = texts[Settings.Language]
+    lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.3, -10, 0.7, 0)
+    box.Position = UDim2.new(0.7, 0, 0.15, 0)
+    box.Text = tostring(Settings[settingKey])
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    box.Font = Enum.Font.GothamBold
+    box.TextSize = 12
+    box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+
+    table.insert(UILanguageRegistry, { 
+        Type = "Input", 
+        Obj = lbl, 
+        BoxObj = box, 
+        Texts = texts, 
+        GetSettingVal = function() return Settings[settingKey] end 
+    })
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then 
+            Settings[settingKey] = num
+            callback(num) 
+        else 
+            box.Text = tostring(Settings[settingKey]) 
+        end
+    end)
+end
+
+-- ==========================================
+-- Create Tabs Content
+-- ==========================================
+local tabInto = CreateTab({ TH = " ข้อมูล", EN = " Info" })
+local tabAutoBlock = CreateTab({ TH = " 🛡 AutoBlock", EN = " 🛡 AutoBlock" })
+local tabHitbox = CreateTab({ TH = "  🛡 Hitbox Block", EN = "  🛡 Hitbox Block" })
+local tabESP = CreateTab({ TH = " 👁 ESP (มองทะลุ)", EN = " 👁 ESP (Wallhack)" })
+local tabStamina = CreateTab({ TH = "  ⚡ Stamina", EN = "  ⚡ Stamina" })
+local tabAimbot = CreateTab({ TH = "  🎯 Aimbot", EN = "  🎯 Aimbot" })
+local tabAutoGen = CreateTab({ TH = "  🎮 Auto Solver", EN = "  🎮 Auto Solver" })
+local tabSettings = CreateTab({ TH = "  ⚙ Settings", EN = "  ⚙ Settings" })
+
+createParagraph(tabInto, 
+    { TH = "สคริปต์นี้ยังอยู่ในการพัฒนา", EN = "This script is under development." },
+    { 
+        TH = [[พัฒนาโดย @By_DuckHub
+🟢 = ใช้งานได้ดี
+🔴 = มีข้อผิดพลาด กำลังแก้ไข
+🟡 = พอใช้ได้
+
+Auto Block 🟡
+--- ID เสียงครบ
+--- block m1 sixer ยังไม่เสถียร
+Punch Aimbot 🟢 
+Auto Solver 🟢
+Stamina Setting 🟢 
+---แก้เรียบร้อยเสถียรแล้ว
+Save Config 🟢
+--- ใช้งานได้แล้ว
++ESP🟡
+
+โปรดติดตามฟังชั่นต่อไป ขอบคุณที่ใช้งาน
+╔══╦╗════╔╗═╔╗╔╗
+╚╗╔╣╚╦═╦═╣╚╗║╚╝╠═╦╦╗
+═║║║║║╬║║║╩║╚╗╔╣║║║║
+═╚╝╚╩╩╩╩╩╩╩╝═╚╝╚═╩═╝
+╯ ]], 
+        EN = [[Developed by @By_DuckHub
+🟢 = Working well
+🔴 = Errors, fixing
+🟡 = Fair / Usable
+
+Auto Block 🟡
+--- All sound IDs included
+--- Blocking M1 for Sixer is still unstable
+Punch Aimbot 🟢 
+Auto Solver 🟢
+Stamina Setting 🟢 
+--- Fixed and currently stable
+Save Config 🟢
+--- Fully functional
++ESP 🟡
+
+Stay tuned for upcoming features. Thank you for using!
+╔══╦╗════╔╗═╔╗╔╗
+╚╗╔╣╚╦═╦═╣╚╗║╚╝╠═╦╦╗
+═║║║║║╬║║║╩║╚╗╔╣║║║║
+═╚╝╚╩╩╩╩╩╩╩╝═╚╝╚═╩═╝
+╯ ]] 
+    }
+)
+
+-- AutoBlock Tab
+createHeader(tabAutoBlock, { TH = "--- ควบคุมออโต้บล็อก (Main Controls) ---", EN = "--- Main Controls ---" })
+createToggle(tabAutoBlock, { TH = "Auto Block (เปิดใช้งานหลัก)", EN = "Master Auto Block" }, "MasterAutoBlock", function(v)
+    QuickBtn.BackgroundColor3 = v and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(180, 40, 40)
+    ApplyLanguage()
+end)
+createToggle(tabAutoBlock, { TH = "Auto Block จากเสียง M1", EN = "Auto Block from M1 Sound" }, "AutoBlockSound", function(v) end)
+createHeader(tabAutoBlock, { TH = "--- การตั้งค่าขั้นสูง (Advanced) ---", EN = "--- Advanced Settings ---" })
+createToggle(tabAutoBlock, { TH = "ข้ามการบล็อกท่า Behead", EN = "Ignore Behead Animation" }, "IgnoreBehead", function(v) end)
+createInput(tabAutoBlock, { TH = "ดีเลย์การบล็อก (วินาที)", EN = "Block Delay (Seconds)" }, "BlockDelay", function(v) end)
+
+-- Hitbox Tab
+createHeader(tabHitbox, { TH = "--- การแสดงผล (Visuals) ---", EN = "--- Visuals ---" })
+createToggle(tabHitbox, { TH = "แสดง Hitbox", EN = "Show Hitbox (Visual)" }, "HitboxEnabled", function(v) end)
+createInput(tabHitbox, { TH = "ความใส Hitbox (0 - 1)", EN = "Hitbox Transparency (0-1)" }, "BoxTransparency", function(v) end)
+createInput(tabHitbox, { TH = "ระยะเวลาแสดง (Visible Time)", EN = "Hitbox Visible Time" }, "VisibleTime", function(v) end)
+createHeader(tabHitbox, { TH = "--- ขนาดและระยะ (Dimensions) ---", EN = "--- Dimensions ---" })
+createInput(tabHitbox, { TH = "Hitbox Width (ความกว้าง)", EN = "Hitbox Width" }, "BoxSizeWidth", function(v) Settings.BoxSizeWidth = math.max(1, v) end)
+createInput(tabHitbox, { TH = "Hitbox Height (ความสูง)", EN = "Hitbox Height" }, "BoxSizeHeight", function(v) Settings.BoxSizeHeight = math.max(1, v) end)
+createInput(tabHitbox, { TH = "Hitbox Depth (ความลึก)", EN = "Hitbox Depth" }, "BoxSizeDepth", function(v) Settings.BoxSizeDepth = math.max(1, v) end)
+createInput(tabHitbox, { TH = "ระยะกล่อง (Distance Offset)", EN = "Hitbox Distance Offset" }, "HitboxDistance", function(v) end)
+
+-- ESP Tab
+createHeader(tabESP, { TH = "--- ตั้งค่าระบบการมองทะลุ (ESP Controls) ---", EN = "--- ESP Controls ---" })
+createToggle(tabESP, { TH = "มองทะลุ ฆาตกร (Killer ESP)", EN = "Killer ESP" }, "EspKiller", function(v) refreshAllESP() end)
+createToggle(tabESP, { TH = "มองทะลุ ผู้รอดชีวิต (Survivors ESP)", EN = "Survivors ESP" }, "EspSurvivors", function(v) refreshAllESP() end)
+createToggle(tabESP, { TH = "มองทะลุ เครื่องปั่นไฟ (Generators ESP)", EN = "Generators ESP" }, "EspGenerators", function(v) refreshAllESP() end)
+createToggle(tabESP, { TH = "มองทะลุ บอท / มินเนี่ยน (Bot ESP)", EN = "Bot/Minion ESP" }, "EspBot", function(v) refreshAllESP() end)
+createToggle(tabESP, { TH = "มองทะลุ เงา (Shadow ESP)", EN = "Shadow ESP" }, "EspShadow", function(v) refreshAllESP() end)
+createToggle(tabESP, { TH = "มองทะลุ ไอเทม (Items ESP)", EN = "Items ESP" }, "EspItems", function(v) refreshAllESP() end)
+
+-- Stamina Tab
+createToggle(tabStamina, { TH = "Stamina ไม่จำกัด", EN = "Infinite Stamina" }, "SurvInfStamina", function(v) end)
+createHeader(tabStamina, { TH = "--- ตั้งค่าฝั่งผู้รอดชีวิต (Survivor) ---", EN = "--- Survivor Settings ---" })
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข Max Stamina", EN = "Enable Custom Max Stamina" }, "SurvEnableMaxStamina", function(v) end)
+createInput(tabStamina, { TH = "ค่า Max Stamina", EN = "Max Stamina Value" }, "SurvMaxStamina", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข อัตราการฟื้นฟู", EN = "Enable Custom Stamina Gain" }, "SurvEnableStaminaGain", function(v) end)
+createInput(tabStamina, { TH = "ค่าฟื้นฟู Stamina", EN = "Stamina Gain Value" }, "SurvStaminaGain", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข อัตราการลด", EN = "Enable Custom Stamina Loss" }, "SurvEnableStaminaLoss", function(v) end)
+createInput(tabStamina, { TH = "ค่าลด Stamina", EN = "Stamina Loss Value" }, "SurvStaminaLoss", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข ความเร็ววิ่ง", EN = "Enable Custom Sprint Speed" }, "SurvEnableSprintSpeed", function(v) end)
+createInput(tabStamina, { TH = "ความเร็วในการวิ่ง (Sprint)", EN = "Sprint Speed Value" }, "SurvSprintSpeed", function(v) end)
+
+createHeader(tabStamina, { TH = "--- ตั้งค่าฝั่งฆาตกร (Killer) ---", EN = "--- Killer Settings ---" })
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข Max Stamina", EN = "Enable Custom Max Stamina" }, "KillerEnableMaxStamina", function(v) end)
+createInput(tabStamina, { TH = "ค่า Max Stamina", EN = "Max Stamina Value" }, "KillerMaxStamina", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข อัตราการฟื้นฟู", EN = "Enable Custom Stamina Gain" }, "KillerEnableStaminaGain", function(v) end)
+createInput(tabStamina, { TH = "ค่าฟื้นฟู Stamina", EN = "Stamina Gain Value" }, "KillerStaminaGain", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข อัตราการลด", EN = "Enable Custom Stamina Loss" }, "KillerEnableStaminaLoss", function(v) end)
+createInput(tabStamina, { TH = "ค่าลด Stamina", EN = "Stamina Loss Value" }, "KillerStaminaLoss", function(v) end)
+createToggle(tabStamina, { TH = "เปิดใช้แก้ไข ความเร็ววิ่ง", EN = "Enable Custom Sprint Speed" }, "KillerEnableSprintSpeed", function(v) end)
+createInput(tabStamina, { TH = "ความเร็วในการวิ่ง (Sprint)", EN = "Sprint Speed Value" }, "KillerSprintSpeed", function(v) end)
+
+-- Aimbot Tab
+createHeader(tabAimbot, { TH = "--- ล็อคเป้าตอนกดสกิล (Manual Aimbot) ---", EN = "--- Manual Aimbot ---" })
+createToggle(tabAimbot, { TH = "🎯 หันหน้าใส่ฆาตกรตอนกดปุ่ม Punch", EN = "🎯 Lock On When Pressing Punch" }, "AimbotEnabled", function(v) end)
+createHeader(tabAimbot, { TH = "--- ค่าพารามิเตอร์ (Parameters) ---", EN = "--- Parameters ---" })
+createInput(tabAimbot, { TH = "ความเร็วหันหน้า (Aimbot Speed)", EN = "Aimbot Speed" }, "AimbotSpeed", function(v) Settings.AimbotSpeed = math.max(0.01, v) end)
+createInput(tabAimbot, { TH = "ดักหน้าเป้าหมาย (Prediction)", EN = "Aimbot Prediction" }, "AimbotPrediction", function(v) Settings.AimbotPrediction = math.max(0, v) end)
+createInput(tabAimbot, { TH = "ระยะทำการ (Aimbot Range)", EN = "Aimbot Range" }, "AimbotRange", function(v) Settings.AimbotRange = math.max(1, v) end)
+createInput(tabAimbot, { TH = "ระยะเวลาล็อค/วินาที (Lock Duration)", EN = "Lock Duration (Sec)" }, "AimbotDuration", function(v) Settings.AimbotDuration = math.max(0.1, v) end)
+
+-- Auto Gen Tab
+createHeader(tabAutoGen, { TH = "--- ระบบมินิเกม (Minigame Hacks) ---", EN = "--- Minigame Hacks ---" })
+createToggle(tabAutoGen, { TH = "เปิดใช้งาน Auto Solver (ลากสาย)", EN = "Enable Auto Solver (Lines)" }, "AutoGenEnabled", function(v) end)
+createInput(tabAutoGen, { TH = "ความเร็วแก้ (ยิ่งน้อยยิ่งไว)", EN = "Solver Speed (Lower = Faster)" }, "AutoGenSpeed", function(v) end)
+createToggle(tabAutoGen, { TH = "ซ่อนหน้าต่าง PuzzleUI", EN = "Hide Minigame UI (PuzzleUI)" }, "HidePuzzleUI", function(v) 
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if pg and pg:FindFirstChild("PuzzleUI") then
+        pg.PuzzleUI.Enabled = not v
+    end
+end)
+
+-- Settings Tab
+createHeader(tabSettings, { TH = "--- การตั้งค่าระบบ (System) ---", EN = "--- System Settings ---" })
+local langBtn = Instance.new("TextButton")
+langBtn.Size = UDim2.new(1, 0, 0, 32)
+langBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+langBtn.Text = Settings.Language == "TH" and "🌐 สลับภาษา (Current: ไทย)" or "🌐 Change Language (Current: ENG)"
+langBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+langBtn.Font = Enum.Font.GothamBold
+langBtn.TextSize = 12
+langBtn.Parent = tabSettings
+Instance.new("UICorner", langBtn).CornerRadius = UDim.new(0, 4)
+
+langBtn.MouseButton1Click:Connect(function()
+    Settings.Language = Settings.Language == "TH" and "EN" or "TH"
+    langBtn.Text = Settings.Language == "TH" and "🌐 สลับภาษา (Current: ไทย)" or "🌐 Change Language (Current: ENG)"
+    ApplyLanguage()
+end)
+
+createHeader(tabSettings, { TH = "--- การแสดงผล UI (UI Display) ---", EN = "--- UI Display ---" })
+createToggle(tabSettings, { TH = "แสดงปุ่มเปิด/ปิดบล็อก บนจอหลัก", EN = "Show Quick UI Button" }, "ShowQuickUI", function(v) 
+    QuickBtn.Visible = v
+end)
+
+createHeader(tabSettings, { TH = "--- จัดการการตั้งค่า (Config Profiles) ---", EN = "--- Config Profiles ---" })
+
+local MAX_CONFIGS = 3
+local currentSelectedConfigName = ""
+local configNameInput = ""
+
+local inputFrame = Instance.new("Frame")
+inputFrame.Size = UDim2.new(1, 0, 0, 32)
+inputFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+inputFrame.Parent = tabSettings
+Instance.new("UICorner", inputFrame).CornerRadius = UDim.new(0, 4)
+
+local inputLbl = Instance.new("TextLabel")
+inputLbl.Size = UDim2.new(0.45, 0, 1, 0)
+inputLbl.Position = UDim2.new(0, 10, 0, 0)
+inputLbl.Text = Settings.Language == "TH" and "ชื่อโปรไฟล์ (Name):" or "Profile Name:"
+inputLbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+inputLbl.Font = Enum.Font.Gotham
+inputLbl.TextSize = 12
+inputLbl.TextXAlignment = Enum.TextXAlignment.Left
+inputLbl.BackgroundTransparency = 1
+inputLbl.Parent = inputFrame
+
+table.insert(UILanguageRegistry, {
+    Type = "Input",
+    Obj = inputLbl,
+    Texts = { TH = "ชื่อโปรไฟล์ (Name):", EN = "Profile Name:" }
+})
+
+local configTextBox = Instance.new("TextBox")
+configTextBox.Size = UDim2.new(0.52, -10, 0.7, 0)
+configTextBox.Position = UDim2.new(0.45, 0, 0.15, 0)
+configTextBox.PlaceholderText = "Max 3 profiles..."
+configTextBox.Text = ""
+configTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+configTextBox.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+configTextBox.Font = Enum.Font.GothamBold
+configTextBox.TextSize = 12
+configTextBox.Parent = inputFrame
+Instance.new("UICorner", configTextBox).CornerRadius = UDim.new(0, 4)
+
+configTextBox.FocusLost:Connect(function()
+    configNameInput = configTextBox.Text
+end)
+
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(1, 0, 0, 32)
+saveBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 60)
+saveBtn.Text = Settings.Language == "TH" and "📥 บันทึกการตั้งค่าปัจจุบัน (Save)" or "📥 Save Current Config"
+saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+saveBtn.Font = Enum.Font.GothamBold
+saveBtn.TextSize = 12
+saveBtn.Parent = tabSettings
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 4)
+
+local dropdownFrame = Instance.new("Frame")
+dropdownFrame.Size = UDim2.new(1, 0, 0, 32)
+dropdownFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+dropdownFrame.Parent = tabSettings
+Instance.new("UICorner", dropdownFrame).CornerRadius = UDim.new(0, 4)
+
+local dropdownDisplay = Instance.new("TextButton")
+dropdownDisplay.Size = UDim2.new(1, -40, 1, 0)
+dropdownDisplay.BackgroundTransparency = 1
+dropdownDisplay.Text = Settings.Language == "TH" and "  📁 เลือกโปรไฟล์..." or "  📁 Select Profile..."
+dropdownDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+dropdownDisplay.Font = Enum.Font.Gotham
+dropdownDisplay.TextSize = 12
+dropdownDisplay.TextXAlignment = Enum.TextXAlignment.Left
+dropdownDisplay.Parent = dropdownFrame
+
+local arrowBtn = Instance.new("TextButton")
+arrowBtn.Size = UDim2.new(0, 40, 1, 0)
+arrowBtn.Position = UDim2.new(1, -40, 0, 0)
+arrowBtn.BackgroundTransparency = 1
+arrowBtn.Text = "▼"
+arrowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+arrowBtn.Font = Enum.Font.GothamBold
+arrowBtn.TextSize = 12
+arrowBtn.Parent = dropdownFrame
+
+local listContainer = Instance.new("Frame")
+listContainer.Size = UDim2.new(1, 0, 0, 0)
+listContainer.Position = UDim2.new(0, 0, 1, 4)
+listContainer.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+listContainer.BorderSizePixel = 0
+listContainer.Visible = false
+listContainer.ZIndex = 10
+listContainer.Parent = dropdownFrame
+Instance.new("UICorner", listContainer).CornerRadius = UDim.new(0, 4)
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = listContainer
+
+local loadBtn = Instance.new("TextButton")
+loadBtn.Size = UDim2.new(1, 0, 0, 32)
+loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 180)
+loadBtn.Text = Settings.Language == "TH" and "📂 โหลดโปรไฟล์ที่เลือก (Load)" or "📂 Load Selected Profile"
+loadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadBtn.Font = Enum.Font.GothamBold
+loadBtn.TextSize = 12
+loadBtn.Parent = tabSettings
+Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0, 4)
+
+local deleteBtn = Instance.new("TextButton")
+deleteBtn.Size = UDim2.new(1, 0, 0, 32)
+deleteBtn.BackgroundColor3 = Color3.fromRGB(160, 40, 40)
+deleteBtn.Text = Settings.Language == "TH" and "🗑️ ลบโปรไฟล์ที่เลือก (Delete)" or "🗑️ Delete Selected Profile"
+deleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+deleteBtn.Font = Enum.Font.GothamBold
+deleteBtn.TextSize = 12
+deleteBtn.Parent = tabSettings
+Instance.new("UICorner", deleteBtn).CornerRadius = UDim.new(0, 4)
+
+local function updateDropdownList()
+    for _, child in ipairs(listContainer:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    
+    local count = 0
+    for _ in pairs(ConfigsStorage) do count = count + 1 end
+    
+    listContainer.Size = UDim2.new(1, 0, 0, count * 30)
+    
+    for name, savedData in pairs(ConfigsStorage) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.Size = UDim2.new(1, 0, 0, 30)
+        optBtn.BackgroundTransparency = 1
+        optBtn.Text = "   " .. name
+        optBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+        optBtn.Font = Enum.Font.Gotham
+        optBtn.TextSize = 12
+        optBtn.TextXAlignment = Enum.TextXAlignment.Left
+        optBtn.ZIndex = 11
+        optBtn.Parent = listContainer
+        
+        optBtn.MouseButton1Click:Connect(function()
+            currentSelectedConfigName = name
+            dropdownDisplay.Text = "  📁 " .. name
+            listContainer.Visible = false
+        end)
+    end
+end
+
+local function toggleDropdown()
+    listContainer.Visible = not listContainer.Visible
+end
+arrowBtn.MouseButton1Click:Connect(toggleDropdown)
+dropdownDisplay.MouseButton1Click:Connect(toggleDropdown)
+
+saveBtn.MouseButton1Click:Connect(function()
+    local name = configNameInput
+    if name == "" then
+        configTextBox.PlaceholderText = "กรุณาใส่ชื่อก่อน!"
+        task.delay(1, function() configTextBox.PlaceholderText = "Max 3 profiles..." end)
+        return
+    end
+    
+    local totalCount = 0
+    for _ in pairs(ConfigsStorage) do totalCount = totalCount + 1 end
+    
+    if not ConfigsStorage[name] and totalCount >= MAX_CONFIGS then
+        configTextBox.Text = ""
+        configTextBox.PlaceholderText = "บันทึกได้สูงสุด 3 เท่านั้น!"
+        task.delay(1, function() configTextBox.PlaceholderText = "Max 3 profiles..." end)
+        return
+    end
+    
+    local dataToSave = {}
+    for k, v in pairs(Settings) do
+        if type(v) ~= "table" then dataToSave[k] = v end
+    end
+    
+    ConfigsStorage[name] = dataToSave
+    saveConfigFile(ConfigsStorage)
+    
+    currentSelectedConfigName = name
+    dropdownDisplay.Text = "  📁 " .. name
+    configTextBox.Text = ""
+    updateDropdownList()
+end)
+
+loadBtn.MouseButton1Click:Connect(function()
+    if currentSelectedConfigName ~= "" and ConfigsStorage[currentSelectedConfigName] then
+        local savedData = ConfigsStorage[currentSelectedConfigName]
+        for k, v in pairs(savedData) do
+            if Settings[k] ~= nil then Settings[k] = v end
+        end
+        ApplyLanguage()
+    end
+end)
+
+deleteBtn.MouseButton1Click:Connect(function()
+    if currentSelectedConfigName ~= "" and ConfigsStorage[currentSelectedConfigName] then
+        ConfigsStorage[currentSelectedConfigName] = nil
+        saveConfigFile(ConfigsStorage)
+        currentSelectedConfigName = ""
+        dropdownDisplay.Text = Settings.Language == "TH" and "  📁 เลือกโปรไฟล์..." or "  📁 Select Profile..."
+        updateDropdownList()
+    end
+end)
+
+updateDropdownList()
+
+if #Tabs > 0 then
+    Tabs[1].Btn.BackgroundTransparency = 0
+    Tabs[1].Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Tabs[1].Indicator.Visible = true
+    Tabs[1].Content.Visible = true
+end
+
+-- Window Controls & Toggle Button
+local isMinimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = UDim2.new(0, 560, 0, 40)
+        Sidebar.Visible = false
+        ContentArea.Visible = false
+    else
+        MainFrame.Size = UDim2.new(0, 560, 0, 360)
+        Sidebar.Visible = true
+        ContentArea.Visible = true
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
+
+QuickBtn.MouseButton1Click:Connect(function()
+    Settings.MasterAutoBlock = not Settings.MasterAutoBlock
+    QuickBtn.BackgroundColor3 = Settings.MasterAutoBlock and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(180, 40, 40)
+    ApplyLanguage()
+end)
+
+local function CreateFloatingToggleButton()
+    local ToggleGui = Instance.new("ScreenGui")
+    ToggleGui.Name = "DuckHubToggleBtn"
+    ToggleGui.ResetOnSpawn = false
+    ToggleGui.Parent = parentGui
+
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Name = "ToggleButton"
+    ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
+    ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    ToggleBtn.Text = "🦆"
+    ToggleBtn.TextSize = 25
+    ToggleBtn.Active = true
+    ToggleBtn.Draggable = true
+    ToggleBtn.Parent = ToggleGui
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+
+    local UIStroke = Instance.new("UIStroke")
+    UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    UIStroke.Thickness = 2
+    UIStroke.Parent = ToggleBtn
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+        ToggleBtn.BackgroundColor3 = MainFrame.Visible and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(180, 40, 40)
+    end)
+end
+CreateFloatingToggleButton()
