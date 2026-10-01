@@ -623,7 +623,7 @@ local function performBlock()
     if now - lastBlockTime < 0.1 then return end 
     lastBlockTime = now
 
-    local blockKey = Enum.KeyCode.F 
+    local blockKey = Enum.KeyCode.Q 
     local fakeInputBegan = createFakeInput(blockKey, Enum.UserInputState.Begin)
     local fakeInputEnded = createFakeInput(blockKey, Enum.UserInputState.End)
 
